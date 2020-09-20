@@ -68,8 +68,21 @@ var exec = func(command string, verbose bool) error {
 
 var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
-	// command := fmt.Sprintf(`ffmpeg -i "%c" -c:v libx264 -crf 23 -c:a aac -q:a 100 "%c.mp4"`, filePath, filePath)
-	command := fmt.Sprintf(`ffmpeg -i "%c" -c:v vp9 -c:a aac "%c.mkv"`, filePath, filePath)
+
+	codec := c.String("codec")
+	crf := c.Int("crf")
+
+	var command string
+	switch codec {
+	case "libx264":
+		command = fmt.Sprintf(`ffmpeg -i "%c" -c:v libx264 -crf %d -c:a aac -q:a 100 "%c.mp4"`, filePath, crf, filePath)
+		break
+	case "vp9":
+		command = fmt.Sprintf(`ffmpeg -i "%c" -c:v vp9 -c:a aac "%c.mkv"`, filePath, filePath)
+	default:
+		return fmt.Errorf("unsupported codec")
+	}
+
 	if dryRun || verbose {
 		fmt.Println(command)
 	}
@@ -211,6 +224,17 @@ func main() {
 				Name:    "reencode",
 				Aliases: []string{"r"},
 				Usage:   "reencode a file via ffmpeg",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "codec",
+						Usage: "codec to use for encoding",
+					},
+					&cli.IntFlag{
+						Name:  "crf",
+						Usage: "crf to use for encoding (https://slhck.info/video/2017/02/24/crf-guide.html)",
+						Value: 23,
+					},
+				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, reEncode)
 				},
