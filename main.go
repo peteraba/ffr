@@ -183,6 +183,8 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 	keep := c.Int("keep")
 	if keep < 1 {
 		keep = len(descriptions) - 1
+	} else {
+		keep--
 	}
 
 	if len(descriptions) < keep {
@@ -222,16 +224,17 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:    "reencode",
-				Aliases: []string{"r"},
+				Aliases: []string{"r", "encode", "e"},
 				Usage:   "reencode a file via ffmpeg",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "codec",
-						Usage: "codec to use for encoding",
+						Usage: "codec to use for encoding [libx264, vp9]",
+						Value: "libx264",
 					},
 					&cli.IntFlag{
 						Name:  "crf",
-						Usage: "crf to use for encoding (https://slhck.info/video/2017/02/24/crf-guide.html)",
+						Usage: "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]",
 						Value: 23,
 					},
 				},
@@ -240,8 +243,8 @@ func main() {
 				},
 			},
 			{
-				Name:    "prefix",
-				Aliases: []string{"p", "prepend"},
+				Name:    "prepend",
+				Aliases: []string{"p", "prefix"},
 				Usage:   "prefix file names with a fixed string",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
@@ -255,8 +258,8 @@ func main() {
 				},
 			},
 			{
-				Name:    "suffix",
-				Aliases: []string{"s", "append", "a"},
+				Name:    "append",
+				Aliases: []string{"a", "suffix", "s"},
 				Usage:   "suffix file names with a fixed string",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
@@ -272,13 +275,13 @@ func main() {
 			{
 				Name:    "merge",
 				Aliases: []string{"m"},
-				Usage:   "merge the generated descriptions (foo-12ffc-1bar -> abc-12bar)",
+				Usage:   "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]",
 				Flags: []cli.Flag{
 					&cli.IntFlag{
 						Name:    "keep",
 						Aliases: []string{"k"},
 						Value:   0,
-						Usage:   "number of description to keep (0 = last)",
+						Usage:   "number of description to keep [0 = last]",
 					},
 				},
 				Action: func(c *cli.Context) error {
