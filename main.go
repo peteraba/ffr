@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/bitfield/script"
-	"gopkg.in/urfave/cli.v2"
+	cli "github.com/urfave/cli/v2"
 )
 
 var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.FileInfo, bool, bool) error) error {
