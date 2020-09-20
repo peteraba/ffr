@@ -91,7 +91,7 @@ var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 
 	newPath := args[0] + basePath + ext
 	if c.Bool("separate") {
-		newPath =args[0] + "-" + basePath + ext
+		newPath = args[0] + "-" + basePath + ext
 	}
 
 	if verbose || dryRun {
@@ -143,8 +143,8 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	type d struct{
-		num string
+	type d struct {
+		num  string
 		text string
 	}
 
@@ -169,7 +169,7 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 
 	keep := c.Int("keep")
 	if keep < 1 {
-		keep = len(descriptions)-1
+		keep = len(descriptions) - 1
 	}
 
 	if len(descriptions) < keep {
