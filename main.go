@@ -75,10 +75,10 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 	var command string
 	switch codec {
 	case "libx264":
-		command = fmt.Sprintf(`ffmpeg -i "%c" -c:v libx264 -crf %d -c:a aac -q:a 100 "%c.mp4"`, filePath, crf, filePath)
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx264 -crf %d -c:a aac -q:a 100 "%s.mp4"`, filePath, crf, filePath)
 		break
 	case "vp9":
-		command = fmt.Sprintf(`ffmpeg -i "%c" -c:v vp9 -c:a aac "%c.mkv"`, filePath, filePath)
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v vp9 -c:a aac "%s.mkv"`, filePath, filePath)
 	default:
 		return fmt.Errorf("unsupported codec")
 	}
@@ -230,7 +230,7 @@ func main() {
 					&cli.StringFlag{
 						Name:  "codec",
 						Usage: "codec to use for encoding [libx264, vp9]",
-						Value: "libx264",
+						Value: "vp9",
 					},
 					&cli.IntFlag{
 						Name:  "crf",
