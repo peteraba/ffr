@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/bitfield/script"
 	cli "github.com/urfave/cli/v2"
@@ -22,10 +23,6 @@ var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string,
 
 	filePaths := args[argCount:]
 	args = args[:argCount]
-	// if verbose {
-	// 	log.Printf("filePaths: %s\n", filePaths)
-	// 	log.Printf("args: %s\n", args)
-	// }
 
 	for _, filePath := range filePaths {
 		fi, err := os.Stat(filePath)
@@ -87,6 +84,10 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 		fmt.Println(command)
 	}
 
+	if dryRun {
+		return nil
+	}
+
 	return exec(command, verbose)
 }
 
@@ -137,6 +138,34 @@ var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 
 	if verbose || dryRun {
 		log.Println(filePath, " -> ", newPath)
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	return os.Rename(filePath, newPath)
+}
+
+var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+	filePath := fi.Name()
+	if len(args) < 2 {
+		return nil
+	}
+
+	old := args[0]
+	new := args[1]
+
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	newPath := strings.Replace(basePath+ext, old, new, 1)
+
+	if verbose || dryRun {
+		log.Printf(`"%s" -> "%s", old: "%s", new: "%s"`, filePath, newPath, old, new)
 	}
 
 	if dryRun {
@@ -207,26 +236,23 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 func main() {
 	app := &cli.App{
 		Name: "ffreencode",
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "dryRun",
-				Aliases: []string{"d"},
-				Value:   false,
-				Usage:   "only print them, do not execute anything",
-			},
-			&cli.BoolFlag{
-				Name:    "verbose",
-				Aliases: []string{"v"},
-				Value:   false,
-				Usage:   "print commands before executing them",
-			},
-		},
 		Commands: []*cli.Command{
 			{
-				Name:    "reencode",
-				Aliases: []string{"r", "encode", "e"},
-				Usage:   "reencode a file via ffmpeg",
+				Name:  "reencode",
+				Usage: "reencode a file via ffmpeg",
 				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
 					&cli.StringFlag{
 						Name:  "codec",
 						Usage: "codec to use for encoding [libx264, vp9]",
@@ -248,6 +274,18 @@ func main() {
 				Usage:   "prefix file names with a fixed string",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+					&cli.BoolFlag{
 						Name:    "separate",
 						Aliases: []string{"s"},
 						Usage:   "separate suffix with a dash",
@@ -263,6 +301,18 @@ func main() {
 				Usage:   "suffix file names with a fixed string",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+					&cli.BoolFlag{
 						Name:    "separate",
 						Aliases: []string{"s"},
 						Usage:   "separate suffix with a dash",
@@ -273,10 +323,43 @@ func main() {
 				},
 			},
 			{
+				Name:  "replace",
+				Usage: "replace a fixed string in file names",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 2, replace)
+				},
+			},
+			{
 				Name:    "merge",
 				Aliases: []string{"m"},
 				Usage:   "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]",
 				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
 					&cli.IntFlag{
 						Name:    "keep",
 						Aliases: []string{"k"},

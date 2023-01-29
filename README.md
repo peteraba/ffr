@@ -45,7 +45,7 @@ About [CRF]([https://slhck.info/video/2017/02/24/crf-guide.html]).
 Re-encode `myvid.mpg` and `myvid2.mpg` using `vp9`.
 
 ```
-ffr r --codec=vp9 --crf=28 myvid.mpg myvid2.mpg
+ffr reencode --codec=vp9 --crf=28 myvid.mpg myvid2.mpg
 ```
 
 This will result in two new files called `myvid.mpg.mkv` and `myvid2.mpg.mpg`.
@@ -135,3 +135,13 @@ ffr m --keep=2 myvid-13ffc-1pele-shooting-from-50meters-1ffc.mp4
 ```
 
 This will result in renaming `myvid-13ffc-1pele-shooting-from-50meters-1ffc.mp4` to `myvid-13pele-shooting-from-50meters.mp4`. This is because the number often comes from slicing a larger video into smaller ones, whereas the last description is often more descriptive of the particular file.
+
+### Replace
+
+Replace a text in the provided files.
+
+```
+ffr replace 'shooting' 'scoring'
+```
+
+This will result in renaming `myvid-13ffc-1pele-shooting-from-50meters-1ffc.mp4` to `myvid-13ffc-1pele-scoring-from-50meters-1ffc.mp4`.
