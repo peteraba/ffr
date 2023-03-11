@@ -272,18 +272,6 @@ var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, v
 	return os.Rename(filePath, newPath)
 }
 
-/*
-
-Resolution Type	Common Name	Aspect Ratio	Pixel Size
-SD (Standard Definition)	480p	4:3	640 x 480
-HD (High Definition)	720p	16:9	1280 x 720
-Full HD (FHD)	1080p	16:9	1920 x 1080
-QHD (Quad HD)	1440p	16:9	2560 x 1440
-2K video	1080p	1:1.77	2048 x 1080
-4K video or Ultra HD (UHD)	4K or 2160p	1:1.9	3840 x 2160
-8K video or Full Ultra HD	8K or 4320p	16∶9	7680 x 4320
-*/
-
 var wellKnown = map[string]string{
 	"640x480":   "sd-480p",
 	"1280x720":  "hd-720p",
@@ -294,8 +282,12 @@ var wellKnown = map[string]string{
 	"7680x4320": "8k-4320p",
 }
 
+var dimensionsRegexp = regexp.MustCompile(`\d+x\d+$`)
+
 var insertDimensionsBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
-	cmd := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 '%s'`, fi.Name())
+	fp := strings.Replace(fi.Name(), " ", "\\ ", -1)
+	fp = strings.Replace(fp, "'", "\\'", -1)
+	cmd := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 %s`, fp)
 
 	output, err := exec(cmd)
 	if err != nil {
@@ -303,11 +295,21 @@ var insertDimensionsBefore = func(c *cli.Context, args []string, fi os.FileInfo,
 	}
 
 	output = strings.TrimSpace(output)
+	if verbose {
+		log.Printf("dimenensions found. file: '%s', dimensions: '%s'", fp, output)
+	}
+
+	output = dimensionsRegexp.FindString(output)
+	if verbose {
+		log.Printf("dimensions found in multiline output. file: '%s', dimensions: '%s'", fp, output)
+	}
+
+	if output == "" {
+		return fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
+	}
+
 	if found, ok := wellKnown[output]; ok {
 		output = found
-	}
-	if verbose {
-		log.Printf("dimenensions found. file: '%s', dimensions: '%s'", fi.Name(), output)
 	}
 
 	return insertBefore(c, append(args, `-`+output), fi, dryRun, verbose)
