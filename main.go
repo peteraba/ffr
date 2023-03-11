@@ -51,16 +51,14 @@ var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string,
 	return nil
 }
 
-var exec = func(command string, verbose bool) error {
+var exec = func(command string) (string, error) {
 	p := script.Exec(command)
 	output, err := p.String()
 	if err != nil {
 		log.Println(err)
-	} else if verbose {
-		log.Println(output)
 	}
 
-	return err
+	return output, err
 }
 
 var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -88,7 +86,12 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 		return nil
 	}
 
-	return exec(command, verbose)
+	output, err := exec(command)
+	if verbose {
+		log.Println(output)
+	}
+
+	return err
 }
 
 var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -269,6 +272,22 @@ var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, v
 	return os.Rename(filePath, newPath)
 }
 
+var insertDimensionsBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+	cmd := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 '%s'`, fi.Name())
+
+	output, err := exec(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to probe file. command: '%s', err: %w", cmd, err)
+	}
+
+	output = strings.TrimSpace(output)
+	if verbose {
+		log.Printf("dimenensions found. file: '%s', dimensions: '%s'", fi.Name(), output)
+	}
+
+	return insertBefore(c, append(args, `-`+output), fi, dryRun, verbose)
+}
+
 func main() {
 	app := &cli.App{
 		Name: "ffreencode",
@@ -414,7 +433,7 @@ func main() {
 			},
 			{
 				Name:      "insert-before",
-				Aliases:   []string{"i"},
+				Aliases:   []string{"ib"},
 				Usage:     "insert before the generated descriptions",
 				ArgsUsage: "[regular expression] [text to insert] [files...]",
 				Flags: []cli.Flag{
@@ -433,6 +452,29 @@ func main() {
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 2, insertBefore)
+				},
+			},
+			{
+				Name:      "insert-dimensions",
+				Aliases:   []string{"id"},
+				Usage:     "insert video dimensions before the generated descriptions",
+				ArgsUsage: "[regular expression] [files...]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 1, insertDimensionsBefore)
 				},
 			},
 		},
