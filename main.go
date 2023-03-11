@@ -233,13 +233,50 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 	return os.Rename(filePath, newPath)
 }
 
+var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+	filePath := fi.Name()
+	if len(args) < 1 {
+		return nil
+	}
+
+	regularExpression := args[0]
+	insert := args[1]
+
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+	newPath := basePath + insert + ext
+
+	r, err := regexp.Compile(`-\d*` + regularExpression + `.*$`)
+	if err != nil {
+		return fmt.Errorf("regexp failed, err: %w", err)
+	}
+	matched := r.FindString(basePath)
+	if matched != "" {
+		newPath = strings.Replace(basePath, matched, insert+matched, 1) + ext
+	}
+
+	if verbose || dryRun {
+		log.Printf(`"%s" -> "%s", old: "%s", new: "%s"`, filePath, newPath, matched, insert+matched)
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	return os.Rename(filePath, newPath)
+}
+
 func main() {
 	app := &cli.App{
 		Name: "ffreencode",
 		Commands: []*cli.Command{
 			{
-				Name:  "reencode",
-				Usage: "reencode a file via ffmpeg",
+				Name:      "reencode",
+				Usage:     "reencode a file via ffmpeg",
+				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "dryRun",
@@ -269,9 +306,10 @@ func main() {
 				},
 			},
 			{
-				Name:    "prepend",
-				Aliases: []string{"p", "prefix"},
-				Usage:   "prefix file names with a fixed string",
+				Name:      "prepend",
+				Aliases:   []string{"p", "prefix"},
+				Usage:     "prefix file names with a fixed string",
+				ArgsUsage: "[text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "dryRun",
@@ -296,9 +334,10 @@ func main() {
 				},
 			},
 			{
-				Name:    "append",
-				Aliases: []string{"a", "suffix", "s"},
-				Usage:   "suffix file names with a fixed string",
+				Name:      "append",
+				Aliases:   []string{"a", "suffix", "s"},
+				Usage:     "suffix file names with a fixed string",
+				ArgsUsage: "[text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "dryRun",
@@ -323,8 +362,9 @@ func main() {
 				},
 			},
 			{
-				Name:  "replace",
-				Usage: "replace a fixed string in file names",
+				Name:      "replace",
+				Usage:     "replace a fixed string in file names",
+				ArgsUsage: "[needle] [text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "dryRun",
@@ -344,9 +384,10 @@ func main() {
 				},
 			},
 			{
-				Name:    "merge",
-				Aliases: []string{"m"},
-				Usage:   "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]",
+				Name:      "merge",
+				Aliases:   []string{"m"},
+				Usage:     "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]",
+				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "dryRun",
@@ -369,6 +410,29 @@ func main() {
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, merge)
+				},
+			},
+			{
+				Name:      "insert-before",
+				Aliases:   []string{"i"},
+				Usage:     "insert before the generated descriptions",
+				ArgsUsage: "[regular expression] [text to insert] [files...]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "dryRun",
+						Aliases: []string{"d"},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 2, insertBefore)
 				},
 			},
 		},
