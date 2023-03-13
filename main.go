@@ -13,13 +13,26 @@ import (
 )
 
 const (
-	flagDryRun    = "dryRun"
-	flagVerbose   = "verbose"
-	flagCodec     = "codec"
-	flagCrf       = "crf"
-	flagSkipParts = "skip-parts"
-	flagSkipFinds = "skip-finds"
-	flagKeep      = "keep"
+	dryRunFlag  = "dryRun"
+	dryRunAlias = "d"
+
+	verboseFlag  = "verbose"
+	verboseAlias = "v"
+
+	codecFlag = "codec"
+	crfFlag   = "crf"
+
+	skipPartsFlag  = "skip-parts"
+	skipPartsAlias = "s"
+
+	skipFindsFlag  = "skip-finds"
+	skipFindsAlias = "s"
+
+	keepFlag  = "keep"
+	keepAlias = "k"
+
+	forceFlag  = "force-overwrite"
+	forceAlias = "f"
 )
 
 const (
@@ -28,8 +41,8 @@ const (
 
 var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.FileInfo, bool, bool) error) error {
 	args := c.Args().Slice()
-	dryRun := c.Bool(flagDryRun)
-	verbose := c.Bool(flagVerbose)
+	dryRun := c.Bool(dryRunFlag)
+	verbose := c.Bool(verboseFlag)
 
 	if argCount > len(args) {
 		argCount = len(args)
@@ -86,8 +99,8 @@ var exec = func(command string) (string, error) {
 var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
 
-	codec := c.String(flagCodec)
-	crf := c.Int(flagCrf)
+	codec := c.String(codecFlag)
+	crf := c.Int(crfFlag)
 
 	var command string
 	switch codec {
@@ -116,6 +129,21 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 	return err
 }
 
+func safeRename(oldPath, newPath string, forceOverwrite bool) error {
+	_, err := os.Stat(newPath)
+	if forceOverwrite || err != nil && os.IsNotExist(err) {
+		return os.Rename(oldPath, newPath)
+	}
+
+	if err != nil {
+		log.Printf("unexpected error during renaming file. old path: '%s', new path: '%s', err: %s", oldPath, newPath, err)
+	}
+
+	log.Printf("file already exists. new path: '%s'", newPath)
+
+	return nil
+}
+
 func concat(parts []string, skip int, newPart, ext, separator string) string {
 	start := strings.Join(parts[:skip], separator)
 	end := strings.Join(parts[skip:], separator)
@@ -136,7 +164,7 @@ var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 		return nil
 	}
 
-	skip := c.Int(flagSkipParts)
+	skip := c.Int(skipPartsFlag)
 	newPart := args[0]
 
 	basePath := filepath.Base(filePath)
@@ -160,7 +188,7 @@ var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 		return nil
 	}
 
-	return os.Rename(filePath, newPath)
+	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
 var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -169,7 +197,7 @@ var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 		return nil
 	}
 
-	skip := c.Int(flagSkipParts)
+	skip := c.Int(skipPartsFlag)
 	newPart := args[0]
 
 	basePath := filepath.Base(filePath)
@@ -194,7 +222,7 @@ var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 		return nil
 	}
 
-	return os.Rename(filePath, newPath)
+	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
 var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -205,7 +233,7 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 
 	search := args[0]
 	replaceWith := args[1]
-	skip := c.Int(flagSkipFinds)
+	skip := c.Int(skipFindsFlag)
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -234,7 +262,7 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 		return nil
 	}
 
-	return os.Rename(filePath, newPath)
+	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
 var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -292,7 +320,7 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 		return nil
 	}
 
-	return os.Rename(filePath, newPath)
+	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
 var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -328,7 +356,7 @@ var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, v
 		return nil
 	}
 
-	return os.Rename(filePath, newPath)
+	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
 var wellKnown = map[string]string{
@@ -376,7 +404,7 @@ var insertDimensionsBefore = func(c *cli.Context, args []string, fi os.FileInfo,
 
 func main() {
 	app := &cli.App{
-		Name: "ffreencode",
+		Name: "ffr",
 		Commands: []*cli.Command{
 			{
 				Name:      "reencode",
@@ -384,24 +412,30 @@ func main() {
 				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
+					},
 					&cli.StringFlag{
-						Name:  flagCodec,
+						Name:  codecFlag,
 						Usage: "codec to use for encoding [libx264, vp9]",
 						Value: "vp9",
 					},
 					&cli.IntFlag{
-						Name:  flagCrf,
+						Name:  crfFlag,
 						Usage: "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]",
 						Value: 23,
 					},
@@ -417,20 +451,26 @@ func main() {
 				ArgsUsage: "[text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
+					},
 					&cli.IntFlag{
-						Name:    flagSkipParts,
-						Aliases: []string{"skip"},
+						Name:    skipPartsFlag,
+						Aliases: []string{skipPartsAlias},
 						Usage:   "number of dash-separated parts to skip",
 					},
 				},
@@ -445,20 +485,26 @@ func main() {
 				ArgsUsage: "[text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
+					},
 					&cli.IntFlag{
-						Name:    flagSkipParts,
-						Aliases: []string{"skip"},
+						Name:    skipPartsFlag,
+						Aliases: []string{skipPartsAlias},
 						Usage:   "number of dash-separated parts to skip",
 					},
 				},
@@ -472,20 +518,26 @@ func main() {
 				ArgsUsage: "[needle] [text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
+					},
 					&cli.IntFlag{
-						Name:    flagSkipFinds,
-						Aliases: []string{"skip"},
+						Name:    skipFindsFlag,
+						Aliases: []string{skipFindsAlias},
 						Usage:   "number finds to skip",
 					},
 				},
@@ -500,20 +552,26 @@ func main() {
 				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
+					},
 					&cli.IntFlag{
-						Name:    flagKeep,
-						Aliases: []string{"k"},
+						Name:    keepFlag,
+						Aliases: []string{keepAlias},
 						Value:   0,
 						Usage:   "number of description to keep [0 = last]",
 					},
@@ -529,16 +587,22 @@ func main() {
 				ArgsUsage: "[regular expression] [text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
+					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -552,16 +616,22 @@ func main() {
 				ArgsUsage: "[regular expression] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    flagDryRun,
-						Aliases: []string{"d"},
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    flagVerbose,
-						Aliases: []string{"v"},
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
+					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   "force overwriting existing files",
 					},
 				},
 				Action: func(c *cli.Context) error {
