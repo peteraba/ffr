@@ -12,10 +12,24 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+const (
+	flagDryRun    = "dryRun"
+	flagVerbose   = "verbose"
+	flagCodec     = "codec"
+	flagCrf       = "crf"
+	flagSkipParts = "skip-parts"
+	flagSkipFinds = "skip-finds"
+	flagKeep      = "keep"
+)
+
+const (
+	separator = "-"
+)
+
 var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.FileInfo, bool, bool) error) error {
 	args := c.Args().Slice()
-	dryRun := c.Bool("dryRun")
-	verbose := c.Bool("verbose")
+	dryRun := c.Bool(flagDryRun)
+	verbose := c.Bool(flagVerbose)
 
 	if argCount > len(args) {
 		argCount = len(args)
@@ -27,25 +41,21 @@ var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string,
 	for _, filePath := range filePaths {
 		fi, err := os.Stat(filePath)
 		if err != nil {
-			if verbose {
-				log.Printf("argument is not a file: %s\n", filePath)
-			}
-
-			continue
+			log.Fatalf("argument is not a file: %s", filePath)
 		}
 
 		if fi.IsDir() {
-			if verbose {
-				log.Printf("file is a directory: %s\n", filePath)
-			}
-
-			continue
+			log.Fatalf("file is a directory: %s", filePath)
 		}
 
 		err = fn(c, args, fi, dryRun, verbose)
 		if err != nil {
 			log.Fatalln(err)
 		}
+	}
+
+	if len(filePaths) == 0 {
+		log.Fatal("no files provided")
 	}
 
 	return nil
@@ -64,8 +74,8 @@ var exec = func(command string) (string, error) {
 var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
 
-	codec := c.String("codec")
-	crf := c.Int("crf")
+	codec := c.String(flagCodec)
+	crf := c.Int(flagCrf)
 
 	var command string
 	switch codec {
@@ -94,11 +104,28 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 	return err
 }
 
+func concat(parts []string, skip int, newPart, ext, separator string) string {
+	start := strings.Join(parts[:skip], separator)
+	end := strings.Join(parts[skip:], separator)
+
+	if start != "" {
+		start += separator
+	}
+	if end != "" {
+		end = separator + end
+	}
+
+	return start + newPart + end + ext
+}
+
 var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
 	if len(args) == 0 {
 		return nil
 	}
+
+	skip := c.Int(flagSkipParts)
+	newPart := args[0]
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -106,10 +133,9 @@ var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	newPath := args[0] + basePath + ext
-	if c.Bool("separate") {
-		newPath = args[0] + "-" + basePath + ext
-	}
+	parts := strings.Split(basePath, separator)
+
+	newPath := concat(parts, skip, newPart, ext, separator)
 
 	if verbose || dryRun {
 		log.Println(filePath, " -> ", newPath)
@@ -128,16 +154,19 @@ var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 		return nil
 	}
 
+	skip := c.Int(flagSkipParts)
+	newPart := args[0]
+
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
 	if ext != "" {
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	newPath := basePath + args[0] + ext
-	if c.Bool("separate") {
-		newPath = basePath + "-" + args[0] + ext
-	}
+	parts := strings.Split(basePath, separator)
+	skipInverse := len(parts) - skip
+
+	newPath := concat(parts, skipInverse, newPart, ext, separator)
 
 	if verbose || dryRun {
 		log.Println(filePath, " -> ", newPath)
@@ -156,8 +185,9 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 		return nil
 	}
 
-	old := args[0]
-	new := args[1]
+	search := args[0]
+	replaceWith := args[1]
+	skip := c.Int(flagSkipFinds)
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -165,10 +195,17 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	newPath := strings.Replace(basePath+ext, old, new, 1)
+	parts := strings.Split(basePath, search)
+	start := strings.Join(parts[:skip], search)
+	end := strings.Join(parts[skip:], replaceWith)
+
+	newPath := start + end + ext
+	if len(start) > 0 && len(end) > 0 {
+		newPath = start + search + end + ext
+	}
 
 	if verbose || dryRun {
-		log.Printf(`"%s" -> "%s", old: "%s", new: "%s"`, filePath, newPath, old, new)
+		log.Printf(`"%s" -> "%s", search: "%s", replace with: "%s"`, filePath, newPath, search, replaceWith)
 	}
 
 	if dryRun {
@@ -223,7 +260,7 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 		return fmt.Errorf("can't find description #%d in '%s'", keep, basePath)
 	}
 
-	newPath := basePath + "-" + descriptions[keep].num + descriptions[0].text + ext
+	newPath := basePath + separator + descriptions[keep].num + descriptions[0].text + ext
 
 	if verbose || dryRun {
 		log.Println(filePath, " -> ", newPath)
@@ -262,7 +299,7 @@ var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, v
 	}
 
 	if verbose || dryRun {
-		log.Printf(`"%s" -> "%s", old: "%s", new: "%s"`, filePath, newPath, matched, insert+matched)
+		log.Printf(`"%s" -> "%s", found: "%s", new: "%s"`, filePath, newPath, matched, insert+matched)
 	}
 
 	if dryRun {
@@ -325,24 +362,24 @@ func main() {
 				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
 					&cli.StringFlag{
-						Name:  "codec",
+						Name:  flagCodec,
 						Usage: "codec to use for encoding [libx264, vp9]",
 						Value: "vp9",
 					},
 					&cli.IntFlag{
-						Name:  "crf",
+						Name:  flagCrf,
 						Usage: "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]",
 						Value: 23,
 					},
@@ -358,21 +395,21 @@ func main() {
 				ArgsUsage: "[text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
-					&cli.BoolFlag{
-						Name:    "separate",
-						Aliases: []string{"s"},
-						Usage:   "separate suffix with a dash",
+					&cli.IntFlag{
+						Name:    flagSkipParts,
+						Aliases: []string{"skip"},
+						Usage:   "number of dash-separated parts to skip",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -386,21 +423,21 @@ func main() {
 				ArgsUsage: "[text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
-					&cli.BoolFlag{
-						Name:    "separate",
-						Aliases: []string{"s"},
-						Usage:   "separate suffix with a dash",
+					&cli.IntFlag{
+						Name:    flagSkipParts,
+						Aliases: []string{"skip"},
+						Usage:   "number of dash-separated parts to skip",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -413,16 +450,21 @@ func main() {
 				ArgsUsage: "[needle] [text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
+					},
+					&cli.IntFlag{
+						Name:    flagSkipFinds,
+						Aliases: []string{"skip"},
+						Usage:   "number finds to skip",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -436,19 +478,19 @@ func main() {
 				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
 					},
 					&cli.IntFlag{
-						Name:    "keep",
+						Name:    flagKeep,
 						Aliases: []string{"k"},
 						Value:   0,
 						Usage:   "number of description to keep [0 = last]",
@@ -465,13 +507,13 @@ func main() {
 				ArgsUsage: "[regular expression] [text to insert] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
@@ -488,13 +530,13 @@ func main() {
 				ArgsUsage: "[regular expression] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
-						Name:    "dryRun",
+						Name:    flagDryRun,
 						Aliases: []string{"d"},
 						Value:   false,
 						Usage:   "only print them, do not execute anything",
 					},
 					&cli.BoolFlag{
-						Name:    "verbose",
+						Name:    flagVerbose,
 						Aliases: []string{"v"},
 						Value:   false,
 						Usage:   "print commands before executing them",
