@@ -38,24 +38,36 @@ var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string,
 	filePaths := args[argCount:]
 	args = args[:argCount]
 
+	var fis []os.FileInfo
+
 	for _, filePath := range filePaths {
 		fi, err := os.Stat(filePath)
 		if err != nil {
-			log.Fatalf("argument is not a file: %s", filePath)
+			log.Fatalf("argument is not a file: %s, err: %s", filePath, err)
 		}
 
 		if fi.IsDir() {
 			log.Fatalf("file is a directory: %s", filePath)
 		}
 
-		err = fn(c, args, fi, dryRun, verbose)
-		if err != nil {
-			log.Fatalln(err)
+		if verbose {
+			log.Printf("file is okay: %s", filePath)
 		}
+
+		fis = append(fis, fi)
 	}
 
 	if len(filePaths) == 0 {
-		log.Fatal("no files provided")
+		log.Fatalf("no files provided")
+
+		return nil
+	}
+
+	for _, fi := range fis {
+		err := fn(c, args, fi, dryRun, verbose)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 
 	return nil
@@ -134,6 +146,9 @@ var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 	}
 
 	parts := strings.Split(basePath, separator)
+	if skip > len(parts) {
+		return fmt.Errorf("more to skip then parts present. file: '%s' skip: %d, parts: %d", basePath, skip, len(parts))
+	}
 
 	newPath := concat(parts, skip, newPart, ext, separator)
 
@@ -164,6 +179,9 @@ var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 	}
 
 	parts := strings.Split(basePath, separator)
+	if skip > len(parts) {
+		return fmt.Errorf("more to skip then parts present. file: '%s' skip: %d, parts: %d", basePath, skip, len(parts))
+	}
 	skipInverse := len(parts) - skip
 
 	newPath := concat(parts, skipInverse, newPart, ext, separator)
@@ -196,6 +214,10 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 	}
 
 	parts := strings.Split(basePath, search)
+	if skip > len(parts) {
+		return fmt.Errorf("more to skip then found. file: '%s', skip: %d, found: %d", basePath, skip, len(parts))
+	}
+
 	start := strings.Join(parts[:skip], search)
 	end := strings.Join(parts[skip:], replaceWith)
 
