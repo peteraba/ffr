@@ -130,6 +130,10 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 }
 
 func safeRename(oldPath, newPath string, forceOverwrite bool) error {
+	if oldPath == newPath {
+		return nil
+	}
+
 	_, err := os.Stat(newPath)
 	if forceOverwrite || err != nil && os.IsNotExist(err) {
 		return os.Rename(oldPath, newPath)
