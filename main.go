@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/bitfield/script"
@@ -19,8 +20,9 @@ const (
 	verboseFlag  = "verbose"
 	verboseAlias = "v"
 
-	codecFlag = "codec"
-	crfFlag   = "crf"
+	codecFlag  = "codec"
+	crfFlag    = "crf"
+	presetFlag = "preset"
 
 	skipPartsFlag  = "skip-parts"
 	skipPartsAlias = "s"
@@ -37,6 +39,15 @@ const (
 
 const (
 	separator = "-"
+)
+
+const (
+	defaultCodec  = "libx265"
+	defaultPreset = "medium"
+)
+
+var (
+	allowedPresets = []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
 )
 
 var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.FileInfo, bool, bool) error) error {
@@ -96,19 +107,107 @@ var exec = func(command string) (string, error) {
 	return output, err
 }
 
+var listKeyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+	command := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pkt_pts_time -of csv=p=0 "%s"`, fi.Name())
+
+	if dryRun || verbose {
+		fmt.Println(command)
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	output, err := exec(command)
+	if err != nil {
+		return err
+	}
+
+	maxCount := 4
+	var numbers []string
+	for i, line := range strings.Split(output, "\n") {
+		if i >= maxCount {
+			break
+		}
+
+		if line != "" {
+			continue
+		}
+
+		n, err := strconv.ParseFloat(line, 32)
+		if err != nil {
+			return err
+		}
+		numbers = append(numbers, fmt.Sprint(n))
+	}
+
+	fmt.Printf("file: %s\n", fi.Name())
+	fmt.Printf("indexes: %s...\n\n", strings.Join(numbers, ", "))
+
+	return nil
+}
+
 var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
 
 	codec := c.String(codecFlag)
 	crf := c.Int(crfFlag)
 
-	var command string
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
 	switch codec {
+	case "libx265":
+		// https://trac.ffmpeg.org/wiki/Encode/H.265
+		if crf == 0 {
+			crf = 28
+		}
+		break
 	case "libx264":
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx264 -crf %d -c:a aac -q:a 100 "%s.mp4"`, filePath, crf, filePath)
+		// https://trac.ffmpeg.org/wiki/Encode/H.264
+		if crf == 0 {
+			crf = 23
+		}
 		break
 	case "vp9":
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v vp9 -c:a aac "%s.mkv"`, filePath, filePath)
+		// https://trac.ffmpeg.org/wiki/Encode/VP9
+		if crf == 0 {
+			crf = 31
+		}
+	default:
+		return fmt.Errorf("unsupported codec")
+	}
+
+	preset := c.String(presetFlag)
+	found := false
+	for _, p := range allowedPresets {
+		if p == preset {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("invalid preset. preset: %s", preset)
+	}
+
+	outputBasePath := fmt.Sprintf("%s-%s-%d-%s", basePath, codec, crf, preset)
+
+	var command string
+	switch codec {
+	case "libx265":
+		// https://trac.ffmpeg.org/wiki/Encode/H.265
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx265 -x265-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 -tag:v hvc1 "%s.mp4"`, filePath, preset, crf, outputBasePath)
+		break
+	case "libx264":
+		// https://trac.ffmpeg.org/wiki/Encode/H.264
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx264 -x264-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 "%s.mp4"`, filePath, preset, crf, outputBasePath)
+		break
+	case "vp9":
+		// https://trac.ffmpeg.org/wiki/Encode/VP9
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v vp9 -crf %d -b:v 0 -c:a aac "%s.mkv"`, filePath, crf, outputBasePath)
 	default:
 		return fmt.Errorf("unsupported codec")
 	}
@@ -435,17 +534,43 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:  codecFlag,
-						Usage: "codec to use for encoding [libx264, vp9]",
-						Value: "vp9",
+						Usage: "codec to use for encoding [libx264, libx265, vp9]",
+						Value: defaultCodec,
+					},
+					&cli.StringFlag{
+						Name:  presetFlag,
+						Usage: fmt.Sprintf("preset to use for encoding [%s] (x264, x265 only)", strings.Join(allowedPresets, ", ")),
+						Value: defaultPreset,
 					},
 					&cli.IntFlag{
 						Name:  crfFlag,
 						Usage: "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]",
-						Value: 23,
 					},
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, reEncode)
+				},
+			},
+			{
+				Name:      "keyframes",
+				Usage:     "list keyframes of video file(s)",
+				ArgsUsage: "[files...]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
+						Value:   false,
+						Usage:   "only print them, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 0, listKeyFrames)
 				},
 			},
 			{
