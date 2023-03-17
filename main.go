@@ -43,7 +43,7 @@ const (
 
 const (
 	defaultCodec  = "libx265"
-	defaultPreset = "medium"
+	defaultPreset = "ultrafast"
 )
 
 var (
