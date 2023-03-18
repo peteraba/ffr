@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -30,11 +31,14 @@ const (
 	skipFindsFlag  = "skip-finds"
 	skipFindsAlias = "s"
 
-	keepFlag  = "keep"
-	keepAlias = "k"
-
 	forceFlag  = "force-overwrite"
 	forceAlias = "f"
+
+	regexpFlag  = "regular-expression"
+	regexpAlias = "r"
+
+	deleteFlag  = "delete"
+	deleteAlias = "del"
 )
 
 const (
@@ -370,7 +374,6 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 
 var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
-	r := regexp.MustCompile(`-(\d+)(\w+)(-[a-z23-]+)?$`)
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -378,49 +381,109 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	type d struct {
-		num  string
-		text string
-	}
-
-	var descriptions []d
-	for {
-		matches := r.FindStringSubmatch(basePath)
-		if len(matches) == 0 {
-			break
-		}
-
-		basePath = basePath[:len(basePath)-len(matches[0])]
-		descriptions = append(descriptions, d{num: matches[1], text: matches[2]})
-	}
-
-	if len(descriptions) == 0 {
-		if verbose {
-			log.Printf("found nothing to merge in '%s'", basePath)
-		}
-
-		return nil
-	}
-
-	keep := c.Int("keep")
-	if keep < 1 {
-		keep = len(descriptions) - 1
+	regularExpression := c.String(regexpFlag)
+	if regularExpression == "" {
+		regularExpression = "([a-z]+)"
 	} else {
-		keep--
+		re := strings.Replace(strings.Replace(regularExpression, "(", "", -1), ")", "", -1)
+		if len(re) < len(regularExpression)-2 {
+			return errors.New("wrong regular expression received")
+		}
+		if len(re) == len(regularExpression) {
+			regularExpression = `(` + regularExpression + `)`
+		}
 	}
 
-	if len(descriptions) < keep {
-		return fmt.Errorf("can't find description #%d in '%s'", keep, basePath)
+	r, err := regexp.Compile(`-(\d+)(` + regularExpression + `(-[a-z]+\d*)*)`)
+	if err != nil {
+		return err
 	}
 
-	newPath := basePath + separator + descriptions[keep].num + descriptions[0].text + ext
+	matches := r.FindAllStringSubmatch(basePath, -1)
+	var (
+		sum   int
+		extra = make([]string, len(matches))
+	)
+	for i := len(matches) - 1; i >= 0; i-- {
+		m := matches[i]
+		basePath = basePath[:len(basePath)-len(m[0])]
+
+		s, err := strconv.ParseInt(m[1], 10, 32)
+		if err != nil {
+			return err
+		}
+		sum += int(s)
+		extra[i] = m[2]
+
+		if verbose {
+			log.Printf("base: %s", basePath)
+			log.Printf("extra: %#v", extra)
+			log.Printf("matches: %#v", m)
+			log.Printf("sum: %d", sum)
+			log.Println()
+		}
+	}
+
+	newPath := fmt.Sprintf("%s-%d%s%s", basePath, sum, strings.Join(extra, "-"), ext)
+	if c.String(deleteFlag) != "" {
+		newPath = strings.Replace(newPath, c.String(deleteFlag), "", 1)
+	}
 
 	if verbose || dryRun {
-		log.Println(filePath, " -> ", newPath)
+		log.Printf(`"%s" -> "%s"`, filePath, newPath)
 	}
 
 	if dryRun {
 		return nil
+	}
+
+	return safeRename(filePath, newPath, c.Bool(forceFlag))
+}
+
+var add = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+	filePath := fi.Name()
+
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	regularExpression := c.String(regexpFlag)
+	if regularExpression == "" {
+		regularExpression = "([a-z]+)"
+	} else {
+		re := strings.Replace(strings.Replace(regularExpression, "(", "", -1), ")", "", -1)
+		if len(re) < len(regularExpression)-2 {
+			return errors.New("wrong regular expression received")
+		}
+		if len(re) == len(regularExpression) {
+			regularExpression = `(` + regularExpression + `)`
+		}
+	}
+
+	r, err := regexp.Compile(`^(\w*)-(\d+)(` + regularExpression + `(-[a-z]+\d*)*)$`)
+	if err != nil {
+		return err
+	}
+
+	matches := r.FindStringSubmatch(basePath)
+	log.Printf("%#v", matches)
+
+	s1, err := strconv.ParseInt(args[0], 10, 32)
+	if err != nil {
+		return err
+	}
+
+	s2, err := strconv.ParseInt(matches[2], 10, 32)
+	if err != nil {
+		return err
+	}
+
+	newPath := fmt.Sprintf("%s-%d%s%s", matches[1], s1+s2, matches[3], ext)
+
+	if verbose || dryRun {
+		log.Printf(`"%s" -> "%s"`, filePath, newPath)
 	}
 
 	return safeRename(filePath, newPath, c.Bool(forceFlag))
@@ -432,7 +495,10 @@ var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, v
 		return nil
 	}
 
-	regularExpression := args[0]
+	regularExpression := c.String(regexpFlag)
+	if regularExpression == "" {
+		regularExpression = "[a-z]+"
+	}
 	insert := args[1]
 
 	basePath := filepath.Base(filePath)
@@ -442,7 +508,7 @@ var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, v
 	}
 	newPath := basePath + insert + ext
 
-	r, err := regexp.Compile(`-\d*` + regularExpression + `.*$`)
+	r, err := regexp.Compile(`-\d+` + regularExpression + `-.*$`)
 	if err != nil {
 		return fmt.Errorf("regexp failed, err: %w", err)
 	}
@@ -518,7 +584,7 @@ func main() {
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -560,7 +626,7 @@ func main() {
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -583,7 +649,7 @@ func main() {
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -617,7 +683,7 @@ func main() {
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -650,7 +716,7 @@ func main() {
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -684,7 +750,7 @@ func main() {
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -698,11 +764,17 @@ func main() {
 						Value:   false,
 						Usage:   "force overwriting existing files",
 					},
-					&cli.IntFlag{
-						Name:    keepFlag,
-						Aliases: []string{keepAlias},
-						Value:   0,
-						Usage:   "number of description to keep [0 = last]",
+					&cli.StringFlag{
+						Name:    regexpFlag,
+						Aliases: []string{regexpAlias},
+						Value:   "",
+						Usage:   "regular expression which could be used to filter parts",
+					},
+					&cli.StringFlag{
+						Name:    deleteFlag,
+						Aliases: []string{deleteAlias},
+						Value:   "",
+						Usage:   "text to delete after merging",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -710,16 +782,39 @@ func main() {
 				},
 			},
 			{
-				Name:      "insert-before",
-				Aliases:   []string{"ib"},
-				Usage:     "insert before the generated descriptions",
-				ArgsUsage: "[regular expression] [text to insert] [files...]",
+				Name:      "add",
+				Aliases:   []string{"a"},
+				Usage:     "add a number to the last number found in the file",
+				ArgsUsage: "[number-to-add] [files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
+					},
+					&cli.BoolFlag{
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
+						Value:   false,
+						Usage:   "print commands before executing them",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 1, add)
+				},
+			},
+			{
+				Name:      "insert-before",
+				Aliases:   []string{"ib"},
+				Usage:     "insert before the generated descriptions",
+				ArgsUsage: "[text to insert] [files...]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
+						Value:   false,
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -733,22 +828,28 @@ func main() {
 						Value:   false,
 						Usage:   "force overwriting existing files",
 					},
+					&cli.StringFlag{
+						Name:    regexpFlag,
+						Aliases: []string{regexpAlias},
+						Value:   "",
+						Usage:   "regular expression which could be used to filter parts ",
+					},
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 2, insertBefore)
+					return process(c, 1, insertBefore)
 				},
 			},
 			{
 				Name:      "insert-dimensions",
 				Aliases:   []string{"id"},
 				Usage:     "insert video dimensions before the generated descriptions",
-				ArgsUsage: "[regular expression] [files...]",
+				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print them, do not execute anything",
+						Usage:   "only print commands, do not execute anything",
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
@@ -761,6 +862,12 @@ func main() {
 						Aliases: []string{forceAlias},
 						Value:   false,
 						Usage:   "force overwriting existing files",
+					},
+					&cli.StringFlag{
+						Name:    regexpFlag,
+						Aliases: []string{regexpAlias},
+						Value:   "",
+						Usage:   "regular expression which could be used to filter parts ",
 					},
 				},
 				Action: func(c *cli.Context) error {
