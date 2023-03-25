@@ -462,13 +462,20 @@ var add = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bo
 		}
 	}
 
-	r, err := regexp.Compile(`^(\w*)-(\d+)(` + regularExpression + `(-[a-z]+\d*)*)$`)
+	r, err := regexp.Compile(`^([\w-]*)-(\d+)(` + regularExpression + `(-[a-z]+\d*)*)$`)
 	if err != nil {
 		return err
 	}
 
 	matches := r.FindStringSubmatch(basePath)
-	log.Printf("%#v", matches)
+	if verbose {
+		log.Printf("basePath: %s", basePath)
+		log.Printf("matches: %#v", matches)
+	}
+
+	if len(matches) == 0 {
+		return errors.New("no matches")
+	}
 
 	s1, err := strconv.ParseInt(args[0], 10, 32)
 	if err != nil {
