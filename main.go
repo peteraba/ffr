@@ -462,7 +462,7 @@ var add = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bo
 		}
 	}
 
-	r, err := regexp.Compile(`^([\w-]*)-(\d+)(` + regularExpression + `(-[a-z]+\d*)*)$`)
+	r, err := regexp.Compile(`^(.+)-(\d+)(` + regularExpression + `(-.*))$`)
 	if err != nil {
 		return err
 	}
@@ -805,6 +805,12 @@ func main() {
 						Aliases: []string{verboseAlias},
 						Value:   false,
 						Usage:   "print commands before executing them",
+					},
+					&cli.StringFlag{
+						Name:    regexpFlag,
+						Aliases: []string{regexpAlias},
+						Value:   "",
+						Usage:   "regular expression which could be used to filter parts ",
 					},
 				},
 				Action: func(c *cli.Context) error {
