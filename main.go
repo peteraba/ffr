@@ -134,7 +134,7 @@ var listKeyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, 
 			break
 		}
 
-		if line != "" {
+		if line == "" {
 			continue
 		}
 
@@ -142,7 +142,8 @@ var listKeyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, 
 		if err != nil {
 			return err
 		}
-		numbers = append(numbers, fmt.Sprint(n))
+
+		numbers = append(numbers, fmt.Sprintf("%.1f", n))
 	}
 
 	fmt.Printf("file: %s\n", fi.Name())
@@ -586,6 +587,11 @@ func main() {
 				Name:      "reencode",
 				Usage:     "reencode a file via ffmpeg",
 				ArgsUsage: "[files...]",
+				Description: `
+Find more about the various codecs and their settings here:
+https://trac.ffmpeg.org/wiki/Encode/H.265
+https://trac.ffmpeg.org/wiki/Encode/H.264
+https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
@@ -626,6 +632,7 @@ func main() {
 			},
 			{
 				Name:      "keyframes",
+				Aliases:   []string{"k"},
 				Usage:     "list keyframes of video file(s)",
 				ArgsUsage: "[files...]",
 				Flags: []cli.Flag{
@@ -716,6 +723,7 @@ func main() {
 			},
 			{
 				Name:      "replace",
+				Aliases:   []string{"r"},
 				Usage:     "replace a fixed string in file names",
 				ArgsUsage: "[needle] [text to insert] [files...]",
 				Flags: []cli.Flag{
