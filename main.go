@@ -115,7 +115,7 @@ var listKeyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, 
 	command := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pkt_pts_time -of csv=p=0 "%s"`, fi.Name())
 
 	if dryRun || verbose {
-		fmt.Println(command)
+		log.Println(command)
 	}
 
 	if dryRun {
@@ -146,8 +146,8 @@ var listKeyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, 
 		numbers = append(numbers, fmt.Sprintf("%.1f", n))
 	}
 
-	fmt.Printf("file: %s\n", fi.Name())
-	fmt.Printf("indexes: %s...\n\n", strings.Join(numbers, ", "))
+	log.Printf("file: %s\n", fi.Name())
+	log.Printf("indexes: %s...\n\n", strings.Join(numbers, ", "))
 
 	return nil
 }
@@ -218,7 +218,7 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 	}
 
 	if dryRun || verbose {
-		fmt.Println(command)
+		log.Println(command)
 	}
 
 	if dryRun {
