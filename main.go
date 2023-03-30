@@ -45,15 +45,20 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`
 	replaceUsage     = "replace a fixed string in file names"
 	replaceArgsUsage = "[needle] [text to insert] [files...]"
 
-	mergeCommand   = "merge"
-	mergeAliases   = "m"
-	mergeUsage     = "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]"
-	mergeArgsUsage = "[files...]"
+	mergePartsCommand   = "merge-parts"
+	mergePartsAliases   = "m"
+	mergePartsUsage     = "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]"
+	mergePartsArgsUsage = "[files...]"
 
-	addCommand   = "add"
-	addAliases   = "a"
-	addUsage     = "add a number to the last number found in the file"
-	addArgsUsage = "[number-to-add] [files...]"
+	addNumberCommand   = "add-number"
+	addNumberAliases   = "a"
+	addNumberUsage     = "add a number to the last number found in the file"
+	addNumberArgsUsage = "[number-to-addNumber] [files...]"
+
+	deletePartsCommand   = "delete-parts"
+	deletePartsAliases   = "d"
+	deletePartsUsage     = "delete certain parts"
+	deletePartsArgsUsage = "[comma-separated-list] [files...]"
 
 	insertBeforeCommand   = "insert-before"
 	insertBeforeAliases   = "ib"
@@ -438,7 +443,7 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
-var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+var mergeParts = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -506,7 +511,7 @@ var merge = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose 
 	return safeRename(filePath, newPath, c.Bool(forceFlag))
 }
 
-var add = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+var addNumber = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -560,6 +565,10 @@ var add = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bo
 	}
 
 	return safeRename(filePath, newPath, c.Bool(forceFlag))
+}
+
+var deleteParts = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+	return nil
 }
 
 var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
@@ -817,10 +826,10 @@ func main() {
 				},
 			},
 			{
-				Name:      mergeCommand,
-				Aliases:   strings.Split(mergeAliases, ", "),
-				Usage:     mergeUsage,
-				ArgsUsage: mergeArgsUsage,
+				Name:      mergePartsCommand,
+				Aliases:   strings.Split(mergePartsAliases, ", "),
+				Usage:     mergePartsUsage,
+				ArgsUsage: mergePartsArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
@@ -854,14 +863,14 @@ func main() {
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 0, merge)
+					return process(c, 0, mergeParts)
 				},
 			},
 			{
-				Name:      addCommand,
-				Aliases:   strings.Split(addAliases, ", "),
-				Usage:     addUsage,
-				ArgsUsage: addArgsUsage,
+				Name:      addNumberCommand,
+				Aliases:   strings.Split(addNumberAliases, ", "),
+				Usage:     addNumberUsage,
+				ArgsUsage: addNumberArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
@@ -889,7 +898,42 @@ func main() {
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, add)
+					return process(c, 1, addNumber)
+				},
+			},
+			{
+				Name:      deletePartsCommand,
+				Aliases:   strings.Split(deletePartsAliases, ", "),
+				Usage:     deletePartsUsage,
+				ArgsUsage: deletePartsArgsUsage,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    dryRunFlag,
+						Aliases: []string{dryRunAlias},
+						Value:   false,
+						Usage:   dryRunUsage,
+					},
+					&cli.BoolFlag{
+						Name:    verboseFlag,
+						Aliases: []string{verboseAlias},
+						Value:   false,
+						Usage:   verboseUsage,
+					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   forceUsage,
+					},
+					&cli.StringFlag{
+						Name:    regexpFlag,
+						Aliases: []string{regexpAlias},
+						Value:   "",
+						Usage:   regexpUsage,
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 1, deleteParts)
 				},
 			},
 			{
