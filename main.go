@@ -14,31 +14,96 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+// commands
+const (
+	reencodeCommand     = "reencode"
+	reencodeUsage       = "reencode a file via ffmpeg"
+	reencodeArgsUsage   = "[files...]"
+	reencodeDescription = `
+Find more about the various codecs and their settings here:
+https://trac.ffmpeg.org/wiki/Encode/H.265
+https://trac.ffmpeg.org/wiki/Encode/H.264
+https://trac.ffmpeg.org/wiki/Encode/VP9`
+
+	keyFramesCommand   = "keyframes"
+	keyFramesAliases   = "k"
+	keyFramesUsage     = "list keyframes of video file(s)"
+	keyFramesArgsUsage = "[files...]"
+
+	prefixCommand   = "prefix"
+	prefixAliases   = "p"
+	prefixUsage     = "prefix file names with a fixed string"
+	prefixArgsUsage = "[text to insert] [files...]"
+
+	suffixCommand   = "suffix"
+	suffixAliases   = "s"
+	suffixUsage     = "suffix file names with a fixed string"
+	suffixArgsUsage = "[text to insert] [files...]"
+
+	replaceCommand   = "replace"
+	replaceAliases   = "r"
+	replaceUsage     = "replace a fixed string in file names"
+	replaceArgsUsage = "[needle] [text to insert] [files...]"
+
+	mergeCommand   = "merge"
+	mergeAliases   = "m"
+	mergeUsage     = "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]"
+	mergeArgsUsage = "[files...]"
+
+	addCommand   = "add"
+	addAliases   = "a"
+	addUsage     = "add a number to the last number found in the file"
+	addArgsUsage = "[number-to-add] [files...]"
+
+	insertBeforeCommand   = "insert-before"
+	insertBeforeAliases   = "ib"
+	insertBeforeUsage     = "insert before the generated descriptions"
+	insertBeforeArgsUsage = "[text to insert] [files...]"
+
+	insertDimensionsCommand   = "insert-dimensions"
+	insertDimensionsAliases   = "id"
+	insertDimensionsUsage     = "insert video dimensions before the generated descriptions"
+	insertDimensionsArgsUsage = "[files...]"
+)
+
+// flags
 const (
 	dryRunFlag  = "dryRun"
 	dryRunAlias = "d"
+	dryRunUsage = "only print commands, do not execute anything"
 
 	verboseFlag  = "verbose"
 	verboseAlias = "v"
+	verboseUsage = "print commands before executing them"
 
 	codecFlag  = "codec"
-	crfFlag    = "crf"
-	presetFlag = "preset"
+	codecUsage = "codec to use for encoding [libx264, libx265, vp9]"
+
+	crfFlag  = "crf"
+	crfUsage = "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]"
+
+	presetFlag  = "preset"
+	presetUsage = "preset to use for encoding [%s] (x264, x265 only)"
 
 	skipPartsFlag  = "skip-parts"
 	skipPartsAlias = "s"
+	skipPartsUsage = "number of dash-separated parts to skip"
 
 	skipFindsFlag  = "skip-finds"
 	skipFindsAlias = "s"
+	skipFindsUsage = "number finds to skip"
 
 	forceFlag  = "force-overwrite"
 	forceAlias = "f"
+	forceUsage = "force overwriting existing files"
 
 	regexpFlag  = "regular-expression"
 	regexpAlias = "r"
+	regexpUsage = "regular expression which could be used to filter parts"
 
 	deleteFlag  = "delete"
 	deleteAlias = "del"
+	deleteUsage = "text to delete after merging"
 )
 
 const (
@@ -111,7 +176,7 @@ var exec = func(command string) (string, error) {
 	return output, err
 }
 
-var listKeyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+var keyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
 	command := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pkt_pts_time -of csv=p=0 "%s"`, fi.Name())
 
 	if dryRun || verbose {
@@ -584,46 +649,42 @@ func main() {
 		Name: "ffr",
 		Commands: []*cli.Command{
 			{
-				Name:      "reencode",
-				Usage:     "reencode a file via ffmpeg",
-				ArgsUsage: "[files...]",
-				Description: `
-Find more about the various codecs and their settings here:
-https://trac.ffmpeg.org/wiki/Encode/H.265
-https://trac.ffmpeg.org/wiki/Encode/H.264
-https://trac.ffmpeg.org/wiki/Encode/VP9`,
+				Name:        reencodeCommand,
+				Usage:       reencodeUsage,
+				ArgsUsage:   reencodeArgsUsage,
+				Description: reencodeDescription,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.StringFlag{
 						Name:  codecFlag,
-						Usage: "codec to use for encoding [libx264, libx265, vp9]",
+						Usage: codecUsage,
 						Value: defaultCodec,
 					},
 					&cli.StringFlag{
 						Name:  presetFlag,
-						Usage: fmt.Sprintf("preset to use for encoding [%s] (x264, x265 only)", strings.Join(allowedPresets, ", ")),
+						Usage: fmt.Sprintf(presetUsage, strings.Join(allowedPresets, ", ")),
 						Value: defaultPreset,
 					},
 					&cli.IntFlag{
 						Name:  crfFlag,
-						Usage: "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]",
+						Usage: crfUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -631,56 +692,56 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "keyframes",
-				Aliases:   []string{"k"},
-				Usage:     "list keyframes of video file(s)",
-				ArgsUsage: "[files...]",
+				Name:      keyFramesCommand,
+				Aliases:   strings.Split(keyFramesAliases, ", "),
+				Usage:     keyFramesUsage,
+				ArgsUsage: keyFramesArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 0, listKeyFrames)
+					return process(c, 0, keyFrames)
 				},
 			},
 			{
-				Name:      "prepend",
-				Aliases:   []string{"p", "prefix"},
-				Usage:     "prefix file names with a fixed string",
-				ArgsUsage: "[text to insert] [files...]",
+				Name:      prefixCommand,
+				Aliases:   strings.Split(prefixAliases, ", "),
+				Usage:     prefixUsage,
+				ArgsUsage: prefixArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.IntFlag{
 						Name:    skipPartsFlag,
 						Aliases: []string{skipPartsAlias},
-						Usage:   "number of dash-separated parts to skip",
+						Usage:   skipPartsUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -688,33 +749,33 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "append",
-				Aliases:   []string{"a", "suffix", "s"},
-				Usage:     "suffix file names with a fixed string",
-				ArgsUsage: "[text to insert] [files...]",
+				Name:      suffixCommand,
+				Aliases:   strings.Split(suffixAliases, ", "),
+				Usage:     suffixUsage,
+				ArgsUsage: suffixArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.IntFlag{
 						Name:    skipPartsFlag,
 						Aliases: []string{skipPartsAlias},
-						Usage:   "number of dash-separated parts to skip",
+						Usage:   skipPartsUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -722,33 +783,33 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "replace",
-				Aliases:   []string{"r"},
-				Usage:     "replace a fixed string in file names",
-				ArgsUsage: "[needle] [text to insert] [files...]",
+				Name:      replaceCommand,
+				Aliases:   strings.Split(replaceAliases, ", "),
+				Usage:     replaceUsage,
+				ArgsUsage: replaceArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.IntFlag{
 						Name:    skipFindsFlag,
 						Aliases: []string{skipFindsAlias},
-						Usage:   "number finds to skip",
+						Usage:   skipFindsUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -756,40 +817,40 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "merge",
-				Aliases:   []string{"m"},
-				Usage:     "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]",
-				ArgsUsage: "[files...]",
+				Name:      mergeCommand,
+				Aliases:   strings.Split(mergeAliases, ", "),
+				Usage:     mergeUsage,
+				ArgsUsage: mergeArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.StringFlag{
 						Name:    regexpFlag,
 						Aliases: []string{regexpAlias},
 						Value:   "",
-						Usage:   "regular expression which could be used to filter parts",
+						Usage:   regexpUsage,
 					},
 					&cli.StringFlag{
 						Name:    deleteFlag,
 						Aliases: []string{deleteAlias},
 						Value:   "",
-						Usage:   "text to delete after merging",
+						Usage:   deleteUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -797,28 +858,34 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "add",
-				Aliases:   []string{"a"},
-				Usage:     "add a number to the last number found in the file",
-				ArgsUsage: "[number-to-add] [files...]",
+				Name:      addCommand,
+				Aliases:   strings.Split(addAliases, ", "),
+				Usage:     addUsage,
+				ArgsUsage: addArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
+					},
+					&cli.BoolFlag{
+						Name:    forceFlag,
+						Aliases: []string{forceAlias},
+						Value:   false,
+						Usage:   forceUsage,
 					},
 					&cli.StringFlag{
 						Name:    regexpFlag,
 						Aliases: []string{regexpAlias},
 						Value:   "",
-						Usage:   "regular expression which could be used to filter parts ",
+						Usage:   regexpUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -826,34 +893,34 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "insert-before",
-				Aliases:   []string{"ib"},
-				Usage:     "insert before the generated descriptions",
-				ArgsUsage: "[text to insert] [files...]",
+				Name:      insertBeforeCommand,
+				Aliases:   strings.Split(insertBeforeAliases, ", "),
+				Usage:     insertBeforeUsage,
+				ArgsUsage: insertBeforeArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.StringFlag{
 						Name:    regexpFlag,
 						Aliases: []string{regexpAlias},
 						Value:   "",
-						Usage:   "regular expression which could be used to filter parts ",
+						Usage:   regexpUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -861,34 +928,34 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`,
 				},
 			},
 			{
-				Name:      "insert-dimensions",
-				Aliases:   []string{"id"},
-				Usage:     "insert video dimensions before the generated descriptions",
-				ArgsUsage: "[files...]",
+				Name:      insertDimensionsCommand,
+				Aliases:   strings.Split(insertDimensionsAliases, ", "),
+				Usage:     insertDimensionsUsage,
+				ArgsUsage: insertDimensionsArgsUsage,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    dryRunFlag,
 						Aliases: []string{dryRunAlias},
 						Value:   false,
-						Usage:   "only print commands, do not execute anything",
+						Usage:   dryRunUsage,
 					},
 					&cli.BoolFlag{
 						Name:    verboseFlag,
 						Aliases: []string{verboseAlias},
 						Value:   false,
-						Usage:   "print commands before executing them",
+						Usage:   verboseUsage,
 					},
 					&cli.BoolFlag{
 						Name:    forceFlag,
 						Aliases: []string{forceAlias},
 						Value:   false,
-						Usage:   "force overwriting existing files",
+						Usage:   forceUsage,
 					},
 					&cli.StringFlag{
 						Name:    regexpFlag,
 						Aliases: []string{regexpAlias},
 						Value:   "",
-						Usage:   "regular expression which could be used to filter parts ",
+						Usage:   regexpUsage,
 					},
 				},
 				Action: func(c *cli.Context) error {
