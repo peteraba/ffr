@@ -522,7 +522,7 @@ var addNumber = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verb
 
 	regularExpression := c.String(regexpFlag)
 	if regularExpression == "" {
-		regularExpression = "([a-z]+)"
+		regularExpression = "([a-z][a-z]+)"
 	} else {
 		re := strings.Replace(strings.Replace(regularExpression, "(", "", -1), ")", "", -1)
 		if len(re) < len(regularExpression)-2 {
@@ -533,7 +533,13 @@ var addNumber = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verb
 		}
 	}
 
-	r, err := regexp.Compile(`^(.+)-(\d+)(` + regularExpression + `(-.*))$`)
+	reFinal := `^(.+)-(\d+)(` + regularExpression + `(-.*)?)$`
+	if verbose {
+		log.Printf("regular expression received: %s", regularExpression)
+		log.Printf("regular expression final: %s", reFinal)
+	}
+
+	r, err := regexp.Compile(reFinal)
 	if err != nil {
 		return err
 	}
