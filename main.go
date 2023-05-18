@@ -168,128 +168,6 @@ func exec(command string) (string, error) {
 	return output, err
 }
 
-// commands
-const (
-	reencodeCommand     = "reencode"
-	reencodeUsage       = "reencode a file via ffmpeg"
-	reencodeArgsUsage   = "[files...]"
-	reencodeDescription = `
-Find more about the various codecs and their settings here:
-https://trac.ffmpeg.org/wiki/Encode/H.265
-https://trac.ffmpeg.org/wiki/Encode/H.264
-https://trac.ffmpeg.org/wiki/Encode/VP9`
-
-	keyFramesCommand   = "keyframes"
-	keyFramesAliases   = "k"
-	keyFramesUsage     = "list keyframes of video file(s)"
-	keyFramesArgsUsage = "[files...]"
-
-	prefixCommand   = "prefix"
-	prefixAliases   = "p"
-	prefixUsage     = "prefix file names with a fixed string"
-	prefixArgsUsage = "[text to insert] [files...]"
-
-	suffixCommand   = "suffix"
-	suffixAliases   = "s"
-	suffixUsage     = "suffix file names with a fixed string"
-	suffixArgsUsage = "[text to insert] [files...]"
-
-	replaceCommand   = "replace"
-	replaceAliases   = "r"
-	replaceUsage     = "replace a fixed string in file names"
-	replaceArgsUsage = "[needle] [text to insert] [files...]"
-
-	mergePartsCommand   = "merge-parts"
-	mergePartsAliases   = "m"
-	mergePartsUsage     = "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]"
-	mergePartsArgsUsage = "[files...]"
-
-	addNumberCommand   = "add-number"
-	addNumberAliases   = "a"
-	addNumberUsage     = "add a number to the last number found in the file"
-	addNumberArgsUsage = "[number-to-addNumber] [files...]"
-
-	deleteRegexpCommand   = "delete-regexp"
-	deleteRegexpAliases   = "dr"
-	deleteRegexpUsage     = "delete a part based on regular expression"
-	deleteRegexpArgsUsage = "[files...]"
-
-	deletePartsCommand   = "delete-parts"
-	deletePartsAliases   = "d"
-	deletePartsUsage     = "delete certain parts based on a comma separated list of parts"
-	deletePartsArgsUsage = "[comma-separated-list] [files...]"
-
-	insertBeforeCommand   = "insert-before"
-	insertBeforeAliases   = "ib"
-	insertBeforeUsage     = "insert before the generated descriptions"
-	insertBeforeArgsUsage = "[text to insert] [files...]"
-
-	insertDimensionsCommand   = "insert-dimensions"
-	insertDimensionsAliases   = "id"
-	insertDimensionsUsage     = "insert video dimensions before the generated descriptions"
-	insertDimensionsArgsUsage = "[files...]"
-)
-
-// flags
-const (
-	backwardsFlag  = "backwards"
-	backwardsAlias = "b"
-	backwardsUsage = "loop over the files backwards"
-
-	dryRunFlag  = "dryRun"
-	dryRunAlias = "d"
-	dryRunUsage = "only print commands, do not execute anything"
-
-	verboseFlag  = "verbose"
-	verboseAlias = "v"
-	verboseUsage = "print commands before executing them"
-
-	codecFlag  = "codec"
-	codecUsage = "codec to use for encoding [libx264, libx265, vp9]"
-
-	crfFlag  = "crf"
-	crfUsage = "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]"
-
-	presetFlag  = "preset"
-	presetUsage = "preset to use for encoding [%s] (x264, x265 only)"
-
-	skipPartsFlag  = "skip-parts"
-	skipPartsAlias = "s"
-	skipPartsUsage = "number of dash-separated parts to skip"
-
-	skipFindsFlag  = "skip-finds"
-	skipFindsAlias = "s"
-	skipFindsUsage = "number finds to skip"
-
-	forceFlag  = "force-overwrite"
-	forceAlias = "f"
-	forceUsage = "force overwriting existing files"
-
-	regexpFlag  = "regular-expression"
-	regexpAlias = "r"
-	regexpUsage = "regular expression which could be used to filter parts"
-
-	deleteTextFlag  = "delete-text"
-	deleteTextAlias = "del"
-	deleteTextUsage = "text to delete after merging"
-
-	regexpGroupFlag  = "regexp-group"
-	regexpGroupAlias = "rg"
-	regexpGroupUsage = "regexp group number to use"
-
-	maxCountFlag  = "max-count"
-	maxCountAlias = "mc"
-	maxCountUsage = "maximum count of changes"
-
-	partsFlag  = "parts"
-	partsAlias = "p"
-	partsUsage = "comma separated list of part counts to change"
-
-	fromBackFlag  = "from-back"
-	fromBackAlias = "fb"
-	fromBackUsage = "comma separated list of part counts to change"
-)
-
 type App struct{}
 
 func keyFrames(fi os.FileInfo, dryRun bool) error {
@@ -875,6 +753,137 @@ func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInf
 	return insertDimensionsBefore(fi, regularExpression, forceOverwrite, dryRun)
 }
 
+// commands
+const (
+	addNumberCommand = "add-number"
+	addNumberAliases = "a"
+	addNumberUsage   = `add a number to the last number found in the file
+
+EXAMPLES:
+Description: Increment the last number segment in the file name 'foo-1080p-2ffc.mp4'
+Command:     ffr add-number 2 foo-1080p-2ffc.mp4
+Result:      foo-1080p-4ffc.mp4
+
+Description: Increment the number in '1080p' in the file name 'foo-1080p-2ffc.mp4'
+Command:     ffr add-number --regular-expression '-(\d+)p' 2 foo-1080p-2ffc.mp4
+Result:      foo-1080p-4ffc.mp4`
+	addNumberArgsUsage = "[number-to-addNumber] [files...]"
+
+	deletePartsCommand   = "delete-parts"
+	deletePartsAliases   = "dp"
+	deletePartsUsage     = "delete certain parts based on a comma separated list of parts"
+	deletePartsArgsUsage = "[comma-separated-list] [files...]"
+
+	deleteRegexpCommand   = "delete-regexp"
+	deleteRegexpAliases   = "dr"
+	deleteRegexpUsage     = "delete a part based on regular expression"
+	deleteRegexpArgsUsage = "[files...]"
+
+	insertBeforeCommand   = "insert-before"
+	insertBeforeAliases   = "ib"
+	insertBeforeUsage     = "insert before the generated descriptions"
+	insertBeforeArgsUsage = "[text to insert] [files...]"
+
+	insertDimensionsCommand   = "insert-dimensions"
+	insertDimensionsAliases   = "id"
+	insertDimensionsUsage     = "insert video dimensions before the generated descriptions"
+	insertDimensionsArgsUsage = "[files...]"
+
+	keyFramesCommand   = "keyframes"
+	keyFramesAliases   = "k"
+	keyFramesUsage     = "list keyframes of video file(s)"
+	keyFramesArgsUsage = "[files...]"
+
+	mergePartsCommand   = "merge-parts"
+	mergePartsAliases   = "m"
+	mergePartsUsage     = "merge the generated descriptions [foo-12ffc-1bar -> abc-12bar]"
+	mergePartsArgsUsage = "[files...]"
+
+	prefixCommand   = "prefix"
+	prefixAliases   = "p"
+	prefixUsage     = "prefix file names with a fixed string"
+	prefixArgsUsage = "[text to insert] [files...]"
+
+	reencodeCommand     = "reencode"
+	reencodeUsage       = "reencode a file via ffmpeg"
+	reencodeArgsUsage   = "[files...]"
+	reencodeDescription = `
+Find more about the various codecs and their settings here:
+https://trac.ffmpeg.org/wiki/Encode/H.265
+https://trac.ffmpeg.org/wiki/Encode/H.264
+https://trac.ffmpeg.org/wiki/Encode/VP9`
+
+	replaceCommand   = "replace"
+	replaceAliases   = "r"
+	replaceUsage     = "replace a fixed string in file names"
+	replaceArgsUsage = "[needle] [text to insert] [files...]"
+
+	suffixCommand   = "suffix"
+	suffixAliases   = "s"
+	suffixUsage     = "suffix file names with a fixed string"
+	suffixArgsUsage = "[text to insert] [files...]"
+)
+
+// flags
+const (
+	backwardsFlag  = "backwards"
+	backwardsAlias = "b"
+	backwardsUsage = "loop over the files backwards"
+
+	deleteTextFlag  = "delete-text"
+	deleteTextAlias = "del"
+	deleteTextUsage = "text to delete after merging"
+
+	dryRunFlag  = "dryRun"
+	dryRunAlias = "d"
+	dryRunUsage = "only print commands, do not execute anything"
+
+	codecFlag  = "codec"
+	codecUsage = "codec to use for encoding [libx264, libx265, vp9]"
+
+	crfFlag  = "crf"
+	crfUsage = "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]"
+
+	forceFlag  = "force-overwrite"
+	forceAlias = "f"
+	forceUsage = "force overwriting existing files"
+
+	fromBackFlag  = "from-back"
+	fromBackAlias = "fb"
+	fromBackUsage = "comma separated list of part counts to change"
+
+	maxCountFlag  = "max-count"
+	maxCountAlias = "mc"
+	maxCountUsage = "maximum count of changes. 0 means no maximum."
+
+	partsFlag  = "parts"
+	partsAlias = "p"
+	partsUsage = "comma separated list of part counts to change"
+
+	presetFlag  = "preset"
+	presetUsage = "preset to use for encoding [%s] (x264, x265 only)"
+
+	skipFindsFlag  = "skip-finds"
+	skipFindsAlias = "s"
+	skipFindsUsage = "number finds to skip"
+
+	skipPartsFlag  = "skip-parts"
+	skipPartsAlias = "s"
+	skipPartsUsage = "number of dash-separated parts to skip"
+
+	regexpFlag  = "regular-expression"
+	regexpAlias = "r"
+	regexpUsage = "regular expression which could be used to filter parts"
+
+	regexpGroupFlag  = "regexp-group"
+	regexpGroupAlias = "rg"
+	regexpGroupUsage = "regexp group number to use"
+
+	verboseFlag  = "verbose"
+	verboseAlias = "v"
+	verboseUsage = "print commands before executing them"
+)
+
 func main() {
 	a := App{}
 
@@ -948,7 +957,7 @@ func main() {
 		maxCountFlag: &cli.IntFlag{
 			Name:    maxCountFlag,
 			Aliases: []string{maxCountAlias},
-			Value:   0,
+			Value:   1,
 			Usage:   maxCountUsage,
 		},
 		partsFlag: &cli.StringFlag{
@@ -969,21 +978,90 @@ func main() {
 		Name: "ffr",
 		Commands: []*cli.Command{
 			{
-				Name:        reencodeCommand,
-				Usage:       reencodeUsage,
-				ArgsUsage:   reencodeArgsUsage,
-				Description: reencodeDescription,
+				Name:      addNumberCommand,
+				Aliases:   strings.Split(addNumberAliases, ", "),
+				Usage:     addNumberUsage,
+				ArgsUsage: addNumberArgsUsage,
 				Flags: []cli.Flag{
 					allFlags[backwardsFlag],
 					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
 					allFlags[forceFlag],
-					allFlags[codecFlag],
-					allFlags[presetFlag],
-					allFlags[crfFlag],
+					allFlags[maxCountFlag],
+					allFlags[regexpFlag],
+					allFlags[regexpGroupFlag],
+					allFlags[skipFindsFlag],
+					allFlags[verboseFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 0, a.reEncode)
+					return process(c, 1, a.addNumber)
+				},
+			},
+			{
+				Name:      deletePartsCommand,
+				Aliases:   strings.Split(deletePartsAliases, ", "),
+				Usage:     deletePartsUsage,
+				ArgsUsage: deletePartsArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[forceFlag],
+					allFlags[fromBackFlag],
+					allFlags[partsFlag],
+					allFlags[verboseFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 1, a.deleteParts)
+				},
+			},
+			{
+				Name:      deleteRegexpCommand,
+				Aliases:   strings.Split(deleteRegexpAliases, ", "),
+				Usage:     deleteRegexpUsage,
+				ArgsUsage: deleteRegexpArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[forceFlag],
+					allFlags[maxCountFlag],
+					allFlags[regexpFlag],
+					allFlags[regexpGroupFlag],
+					allFlags[verboseFlag],
+					allFlags[skipPartsFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 0, a.deleteRegexp)
+				},
+			},
+			{
+				Name:      insertBeforeCommand,
+				Aliases:   strings.Split(insertBeforeAliases, ", "),
+				Usage:     insertBeforeUsage,
+				ArgsUsage: insertBeforeArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
+					allFlags[verboseFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 1, a.insertBefore)
+				},
+			},
+			{
+				Name:      insertDimensionsCommand,
+				Aliases:   strings.Split(insertDimensionsAliases, ", "),
+				Usage:     insertDimensionsUsage,
+				ArgsUsage: insertDimensionsArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
+					allFlags[verboseFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 0, a.insertDimensionsBefore)
 				},
 			},
 			{
@@ -1001,6 +1079,24 @@ func main() {
 				},
 			},
 			{
+				Name:      mergePartsCommand,
+				Aliases:   strings.Split(mergePartsAliases, ", "),
+				Usage:     mergePartsUsage,
+				ArgsUsage: mergePartsArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[deleteTextFlag],
+					allFlags[dryRunFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
+					allFlags[skipPartsFlag],
+					allFlags[verboseFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 0, a.mergeParts)
+				},
+			},
+			{
 				Name:      prefixCommand,
 				Aliases:   strings.Split(prefixAliases, ", "),
 				Usage:     prefixUsage,
@@ -1008,28 +1104,30 @@ func main() {
 				Flags: []cli.Flag{
 					allFlags[backwardsFlag],
 					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
 					allFlags[forceFlag],
 					allFlags[skipPartsFlag],
+					allFlags[verboseFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.prefix)
 				},
 			},
 			{
-				Name:      suffixCommand,
-				Aliases:   strings.Split(suffixAliases, ", "),
-				Usage:     suffixUsage,
-				ArgsUsage: suffixArgsUsage,
+				Name:        reencodeCommand,
+				Usage:       reencodeUsage,
+				ArgsUsage:   reencodeArgsUsage,
+				Description: reencodeDescription,
 				Flags: []cli.Flag{
 					allFlags[backwardsFlag],
+					allFlags[codecFlag],
+					allFlags[crfFlag],
 					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
 					allFlags[forceFlag],
-					allFlags[skipPartsFlag],
+					allFlags[presetFlag],
+					allFlags[verboseFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, a.suffix)
+					return process(c, 0, a.reEncode)
 				},
 			},
 			{
@@ -1040,117 +1138,28 @@ func main() {
 				Flags: []cli.Flag{
 					allFlags[backwardsFlag],
 					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
 					allFlags[forceFlag],
 					allFlags[skipFindsFlag],
+					allFlags[verboseFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 2, a.replace)
 				},
 			},
 			{
-				Name:      mergePartsCommand,
-				Aliases:   strings.Split(mergePartsAliases, ", "),
-				Usage:     mergePartsUsage,
-				ArgsUsage: mergePartsArgsUsage,
+				Name:      suffixCommand,
+				Aliases:   strings.Split(suffixAliases, ", "),
+				Usage:     suffixUsage,
+				ArgsUsage: suffixArgsUsage,
 				Flags: []cli.Flag{
 					allFlags[backwardsFlag],
 					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
 					allFlags[forceFlag],
 					allFlags[skipPartsFlag],
-					allFlags[regexpFlag],
-					allFlags[deleteTextFlag],
-				},
-				Action: func(c *cli.Context) error {
-					return process(c, 0, a.mergeParts)
-				},
-			},
-			{
-				Name:      addNumberCommand,
-				Aliases:   strings.Split(addNumberAliases, ", "),
-				Usage:     addNumberUsage,
-				ArgsUsage: addNumberArgsUsage,
-				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
 					allFlags[verboseFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-					allFlags[regexpGroupFlag],
-					allFlags[skipFindsFlag],
-					allFlags[maxCountFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, a.addNumber)
-				},
-			},
-			{
-				Name:      deleteRegexpCommand,
-				Aliases:   strings.Split(deletePartsAliases, ", "),
-				Usage:     deleteRegexpUsage,
-				ArgsUsage: deleteRegexpArgsUsage,
-				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-					allFlags[regexpGroupFlag],
-					allFlags[skipPartsFlag],
-					allFlags[maxCountFlag],
-				},
-				Action: func(c *cli.Context) error {
-					return process(c, 0, a.deleteRegexp)
-				},
-			},
-			{
-				Name:      deletePartsCommand,
-				Aliases:   strings.Split(deletePartsAliases, ", "),
-				Usage:     deletePartsUsage,
-				ArgsUsage: deletePartsArgsUsage,
-				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
-					allFlags[forceFlag],
-					allFlags[partsFlag],
-					allFlags[fromBackFlag],
-				},
-				Action: func(c *cli.Context) error {
-					return process(c, 1, a.deleteParts)
-				},
-			},
-			{
-				Name:      insertBeforeCommand,
-				Aliases:   strings.Split(insertBeforeAliases, ", "),
-				Usage:     insertBeforeUsage,
-				ArgsUsage: insertBeforeArgsUsage,
-				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-				},
-				Action: func(c *cli.Context) error {
-					return process(c, 1, a.insertBefore)
-				},
-			},
-			{
-				Name:      insertDimensionsCommand,
-				Aliases:   strings.Split(insertDimensionsAliases, ", "),
-				Usage:     insertDimensionsUsage,
-				ArgsUsage: insertDimensionsArgsUsage,
-				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-				},
-				Action: func(c *cli.Context) error {
-					return process(c, 0, a.insertDimensionsBefore)
+					return process(c, 1, a.suffix)
 				},
 			},
 		},

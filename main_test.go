@@ -15,178 +15,6 @@ func init() {
 	}
 }
 
-func Test_concat(t *testing.T) {
-	type args struct {
-		parts     []string
-		skip      int
-		newPart   string
-		ext       string
-		separator string
-	}
-
-	panicTests := []struct {
-		name string
-		args args
-	}{
-		{
-			name: "empty-parts",
-			args: args{
-				parts:     []string{},
-				skip:      1,
-				newPart:   "quix",
-				ext:       ".txt",
-				separator: "-",
-			},
-		},
-		{
-			name: "non-empty-parts",
-			args: args{
-				parts:     []string{"foo", "bar", "baz"},
-				skip:      4,
-				newPart:   "quix",
-				ext:       ".txt",
-				separator: "-",
-			},
-		},
-	}
-
-	for _, tt := range panicTests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Panics(t, func() { concat(tt.args.parts, tt.args.skip, tt.args.newPart, tt.args.ext, tt.args.separator) })
-		})
-	}
-
-	successTests := []struct {
-		name string
-		args args
-		want string
-	}{
-		{
-			name: "no skip",
-			args: args{
-				parts:     []string{"foo", "bar", "baz"},
-				skip:      0,
-				newPart:   "quix",
-				ext:       ".txt",
-				separator: "-",
-			},
-			want: "quix-foo-bar-baz.txt",
-		},
-		{
-			name: "skip to middle",
-			args: args{
-				parts:     []string{"foo", "bar", "baz"},
-				skip:      2,
-				newPart:   "quix",
-				ext:       ".txt",
-				separator: "-",
-			},
-			want: "foo-bar-quix-baz.txt",
-		},
-		{
-			name: "skip to last",
-			args: args{
-				parts:     []string{"foo", "bar", "baz"},
-				skip:      3,
-				newPart:   "quix",
-				ext:       ".txt",
-				separator: "-",
-			},
-			want: "foo-bar-baz-quix.txt",
-		},
-	}
-	for _, tt := range successTests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := concat(tt.args.parts, tt.args.skip, tt.args.newPart, tt.args.ext, tt.args.separator); got != tt.want {
-				t.Errorf("concat() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_safeRename(t *testing.T) {
-	type args struct {
-		oldPath        string
-		newPath        string
-		forceOverwrite bool
-	}
-	tests := []struct {
-		name    string
-		need    []string
-		args    args
-		want    []string
-		wantErr bool
-	}{
-		{
-			name: "rename",
-			need: []string{"1.txt"},
-			args: args{
-				oldPath:        "1.txt",
-				newPath:        "2.txt",
-				forceOverwrite: false,
-			},
-			want:    []string{"2.txt"},
-			wantErr: false,
-		},
-		{
-			name: "file names match",
-			need: []string{"1.txt"},
-			args: args{
-				oldPath:        "1.txt",
-				newPath:        "1.txt",
-				forceOverwrite: false,
-			},
-			want:    []string{"1.txt"},
-			wantErr: false,
-		},
-		{
-			name: "overwrite",
-			need: []string{"1.txt", "2.txt"},
-			args: args{
-				oldPath:        "1.txt",
-				newPath:        "2.txt",
-				forceOverwrite: true,
-			},
-			want:    []string{"2.txt"},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
-
-			var err error
-
-			// setup
-			for _, fileName := range tt.need {
-				err = os.WriteFile(fileName, nil, 0777)
-				require.NoError(t, err)
-			}
-
-			// execute
-			if err := safeRename(tt.args.oldPath, tt.args.newPath, tt.args.forceOverwrite); (err != nil) != tt.wantErr {
-				t.Errorf("safeRename() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			// assert
-			for _, fileName := range tt.want {
-				assert.FileExists(t, fileName)
-			}
-		})
-	}
-}
-
 func Test_addNumber(t *testing.T) {
 	type args struct {
 		filePath          string
@@ -358,6 +186,95 @@ func Test_addNumber(t *testing.T) {
 			assert.NoError(t, result)
 			for _, fileName := range tt.want {
 				assert.FileExists(t, fileName)
+			}
+		})
+	}
+}
+
+func Test_concat(t *testing.T) {
+	type args struct {
+		parts     []string
+		skip      int
+		newPart   string
+		ext       string
+		separator string
+	}
+
+	panicTests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "empty-parts",
+			args: args{
+				parts:     []string{},
+				skip:      1,
+				newPart:   "quix",
+				ext:       ".txt",
+				separator: "-",
+			},
+		},
+		{
+			name: "non-empty-parts",
+			args: args{
+				parts:     []string{"foo", "bar", "baz"},
+				skip:      4,
+				newPart:   "quix",
+				ext:       ".txt",
+				separator: "-",
+			},
+		},
+	}
+
+	for _, tt := range panicTests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Panics(t, func() { concat(tt.args.parts, tt.args.skip, tt.args.newPart, tt.args.ext, tt.args.separator) })
+		})
+	}
+
+	successTests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "no skip",
+			args: args{
+				parts:     []string{"foo", "bar", "baz"},
+				skip:      0,
+				newPart:   "quix",
+				ext:       ".txt",
+				separator: "-",
+			},
+			want: "quix-foo-bar-baz.txt",
+		},
+		{
+			name: "skip to middle",
+			args: args{
+				parts:     []string{"foo", "bar", "baz"},
+				skip:      2,
+				newPart:   "quix",
+				ext:       ".txt",
+				separator: "-",
+			},
+			want: "foo-bar-quix-baz.txt",
+		},
+		{
+			name: "skip to last",
+			args: args{
+				parts:     []string{"foo", "bar", "baz"},
+				skip:      3,
+				newPart:   "quix",
+				ext:       ".txt",
+				separator: "-",
+			},
+			want: "foo-bar-baz-quix.txt",
+		},
+	}
+	for _, tt := range successTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := concat(tt.args.parts, tt.args.skip, tt.args.newPart, tt.args.ext, tt.args.separator); got != tt.want {
+				t.Errorf("concat() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -629,6 +546,32 @@ func Test_deleteRegexp(t *testing.T) {
 	}
 }
 
+func Test_exec(t *testing.T) {
+	type args struct {
+		command string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "default",
+			args: args{
+				command: "echo 'hello'",
+			},
+			want: "hello\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := exec(tt.args.command)
+			require.NoError(t, err)
+			assert.Equalf(t, tt.want, got, "exec(%v)", tt.args.command)
+		})
+	}
+}
+
 func Test_insertBefore(t *testing.T) {
 	type args struct {
 		filePath          string
@@ -815,6 +758,64 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			assert.NoError(t, result)
 			for _, fileName := range tt.want {
 				assert.FileExists(t, fileName)
+			}
+		})
+	}
+}
+
+func Test_getFileInfoList(t *testing.T) {
+	type args struct {
+		filePaths     []string
+		backwardsFlag bool
+	}
+	tests := []struct {
+		name string
+		args args
+		want []string
+	}{
+		{
+			name: "forward",
+			args: args{
+				filePaths:     []string{"foo.txt", "bar.txt"},
+				backwardsFlag: false,
+			},
+			want: []string{"foo.txt", "bar.txt"},
+		},
+		{
+			name: "backward",
+			args: args{
+				filePaths:     []string{"foo.txt", "bar.txt"},
+				backwardsFlag: true,
+			},
+			want: []string{"bar.txt", "foo.txt"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				// tear down
+				for _, fileName := range tt.args.filePaths {
+					assert.FileExists(t, fileName)
+
+					err := os.Remove(fileName)
+					require.NoError(t, err)
+				}
+			}()
+
+			var err error
+
+			// setup
+			for _, filePath := range tt.args.filePaths {
+				err = os.WriteFile(filePath, nil, 0777)
+				require.NoError(t, err)
+			}
+
+			// execute
+			result := getFileInfoList(tt.args.filePaths, tt.args.backwardsFlag)
+
+			// assert
+			for i, fi := range result {
+				assert.Equal(t, tt.want[i], fi.Name())
 			}
 		})
 	}
@@ -1351,6 +1352,89 @@ func Test_replace(t *testing.T) {
 	}
 }
 
+func Test_safeRename(t *testing.T) {
+	type args struct {
+		oldPath        string
+		newPath        string
+		forceOverwrite bool
+	}
+	tests := []struct {
+		name    string
+		need    []string
+		args    args
+		want    []string
+		wantErr bool
+	}{
+		{
+			name: "rename",
+			need: []string{"1.txt"},
+			args: args{
+				oldPath:        "1.txt",
+				newPath:        "2.txt",
+				forceOverwrite: false,
+			},
+			want:    []string{"2.txt"},
+			wantErr: false,
+		},
+		{
+			name: "file names match",
+			need: []string{"1.txt"},
+			args: args{
+				oldPath:        "1.txt",
+				newPath:        "1.txt",
+				forceOverwrite: false,
+			},
+			want:    []string{"1.txt"},
+			wantErr: false,
+		},
+		{
+			name: "overwrite",
+			need: []string{"1.txt", "2.txt"},
+			args: args{
+				oldPath:        "1.txt",
+				newPath:        "2.txt",
+				forceOverwrite: true,
+			},
+			want:    []string{"2.txt"},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				// tear down
+				for _, fileName := range tt.want {
+					assert.FileExists(t, fileName)
+
+					err := os.Remove(fileName)
+					require.NoError(t, err)
+				}
+				for _, fileName := range tt.need {
+					_ = os.Remove(fileName)
+				}
+			}()
+
+			var err error
+
+			// setup
+			for _, fileName := range tt.need {
+				err = os.WriteFile(fileName, nil, 0777)
+				require.NoError(t, err)
+			}
+
+			// execute
+			if err := safeRename(tt.args.oldPath, tt.args.newPath, tt.args.forceOverwrite); (err != nil) != tt.wantErr {
+				t.Errorf("safeRename() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			// assert
+			for _, fileName := range tt.want {
+				assert.FileExists(t, fileName)
+			}
+		})
+	}
+}
+
 func Test_suffix(t *testing.T) {
 	type args struct {
 		filePath       string
@@ -1448,90 +1532,6 @@ func Test_suffix(t *testing.T) {
 			for _, fileName := range tt.want {
 				assert.FileExists(t, fileName)
 			}
-		})
-	}
-}
-
-func Test_getFileInfoList(t *testing.T) {
-	type args struct {
-		filePaths     []string
-		backwardsFlag bool
-	}
-	tests := []struct {
-		name string
-		args args
-		want []string
-	}{
-		{
-			name: "forward",
-			args: args{
-				filePaths:     []string{"foo.txt", "bar.txt"},
-				backwardsFlag: false,
-			},
-			want: []string{"foo.txt", "bar.txt"},
-		},
-		{
-			name: "backward",
-			args: args{
-				filePaths:     []string{"foo.txt", "bar.txt"},
-				backwardsFlag: true,
-			},
-			want: []string{"bar.txt", "foo.txt"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.args.filePaths {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-			}()
-
-			var err error
-
-			// setup
-			for _, filePath := range tt.args.filePaths {
-				err = os.WriteFile(filePath, nil, 0777)
-				require.NoError(t, err)
-			}
-
-			// execute
-			result := getFileInfoList(tt.args.filePaths, tt.args.backwardsFlag)
-
-			// assert
-			for i, fi := range result {
-				assert.Equal(t, tt.want[i], fi.Name())
-			}
-		})
-	}
-}
-
-func Test_exec(t *testing.T) {
-	type args struct {
-		command string
-	}
-	tests := []struct {
-		name string
-		args args
-		want string
-	}{
-		{
-			name: "default",
-			args: args{
-				command: "echo 'hello'",
-			},
-			want: "hello\n",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := exec(tt.args.command)
-			require.NoError(t, err)
-			assert.Equalf(t, tt.want, got, "exec(%v)", tt.args.command)
 		})
 	}
 }
