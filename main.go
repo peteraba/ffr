@@ -14,6 +14,160 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+const (
+	separator = "-"
+)
+
+const (
+	defaultCodec  = "libx265"
+	defaultPreset = "ultrafast"
+)
+
+var (
+	allowedPresets = []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
+)
+
+type logger struct {
+	silent  bool
+	history []string
+}
+
+func (l *logger) Printf(msg string, args ...interface{}) {
+	if l.silent {
+		l.history = append(l.history, fmt.Sprintf(msg, args...))
+		return
+	}
+
+	log.Printf(msg, args...)
+}
+
+func (l *logger) Println(msg ...any) {
+	if l.silent {
+		l.history = append(l.history, fmt.Sprintln(msg...))
+		return
+	}
+
+	log.Println(msg...)
+}
+
+var l logger
+
+func safeRename(oldPath, newPath string, forceOverwrite bool) error {
+	if oldPath == newPath {
+		l.Printf("no file name change. path: '%s'", newPath)
+
+		return nil
+	}
+
+	l.Println(oldPath, " -> ", newPath)
+
+	_, err := os.Stat(newPath)
+	if err == nil || !os.IsNotExist(err) {
+		if !forceOverwrite {
+			l.Printf("file already exists. path: '%s'", newPath)
+			return err
+		}
+
+		l.Printf("force overwrite. path: '%s'", newPath)
+	}
+
+	err = os.Rename(oldPath, newPath)
+	if err != nil {
+		l.Printf("unexpected error during renaming file. old path: '%s', new path: '%s', err: %s", oldPath, newPath, err)
+	}
+
+	return err
+}
+
+func concat(parts []string, skip int, newPart, ext, separator string) string {
+	if len(parts) < skip {
+		panic(fmt.Errorf("unsafe usage of concat. len(parts): %d, skip: %d", len(parts), skip))
+	}
+
+	start := strings.Join(parts[:skip], separator)
+	if start != "" {
+		start += separator
+	}
+
+	end := strings.Join(parts[skip:], separator)
+	if end != "" {
+		end = separator + end
+	}
+
+	return start + newPart + end + ext
+}
+
+func getFileInfoList(filePaths []string, backwardsFlag bool) []os.FileInfo {
+	if len(filePaths) == 0 {
+		log.Fatalf("no files provided")
+
+		return nil
+	}
+
+	var fileInfoList []os.FileInfo
+
+	for _, filePath := range filePaths {
+		fi, err := os.Stat(filePath)
+		if err != nil {
+			log.Fatalf("argument is not a file: %s, err: %s", filePath, err)
+		}
+
+		if fi.IsDir() {
+			log.Fatalf("file is a directory: %s", filePath)
+		}
+
+		l.Printf("file is okay: %s", filePath)
+
+		fileInfoList = append(fileInfoList, fi)
+	}
+
+	if backwardsFlag {
+		var fis2 []os.FileInfo
+		for i := len(fileInfoList) - 1; i >= 0; i-- {
+			fis2 = append(fis2, fileInfoList[i])
+		}
+		fileInfoList = fis2
+	}
+
+	return fileInfoList
+}
+
+func process(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.FileInfo, bool) error) error {
+	args := c.Args().Slice()
+	dryRun := c.Bool(dryRunFlag)
+
+	l = logger{
+		silent: !c.Bool(verboseFlag) || !c.Bool(dryRunFlag),
+	}
+
+	if argCount > len(args) {
+		argCount = len(args)
+	}
+
+	fileInfoList := getFileInfoList(args[argCount:], c.Bool(backwardsFlag))
+
+	args = args[:argCount]
+
+	for _, fi := range fileInfoList {
+		err := fn(c, args, fi, dryRun)
+		if err != nil {
+			l.Println(err)
+		}
+	}
+
+	return nil
+}
+
+func exec(command string) (string, error) {
+	p := script.Exec(command)
+	output, err := p.String()
+	if err != nil {
+		l.Println(err)
+	}
+
+	return output, err
+}
+
 // commands
 const (
 	reencodeCommand     = "reencode"
@@ -55,9 +209,14 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`
 	addNumberUsage     = "add a number to the last number found in the file"
 	addNumberArgsUsage = "[number-to-addNumber] [files...]"
 
+	deleteRegexpCommand   = "delete-regexp"
+	deleteRegexpAliases   = "dr"
+	deleteRegexpUsage     = "delete a part based on regular expression"
+	deleteRegexpArgsUsage = "[files...]"
+
 	deletePartsCommand   = "delete-parts"
 	deletePartsAliases   = "d"
-	deletePartsUsage     = "delete certain parts"
+	deletePartsUsage     = "delete certain parts based on a comma separated list of parts"
 	deletePartsArgsUsage = "[comma-separated-list] [files...]"
 
 	insertBeforeCommand   = "insert-before"
@@ -73,6 +232,10 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`
 
 // flags
 const (
+	backwardsFlag  = "backwards"
+	backwardsAlias = "b"
+	backwardsUsage = "loop over the files backwards"
+
 	dryRunFlag  = "dryRun"
 	dryRunAlias = "d"
 	dryRunUsage = "only print commands, do not execute anything"
@@ -106,87 +269,33 @@ const (
 	regexpAlias = "r"
 	regexpUsage = "regular expression which could be used to filter parts"
 
-	deleteFlag  = "delete"
-	deleteAlias = "del"
-	deleteUsage = "text to delete after merging"
+	deleteTextFlag  = "delete-text"
+	deleteTextAlias = "del"
+	deleteTextUsage = "text to delete after merging"
+
+	regexpGroupFlag  = "regexp-group"
+	regexpGroupAlias = "rg"
+	regexpGroupUsage = "regexp group number to use"
+
+	maxCountFlag  = "max-count"
+	maxCountAlias = "mc"
+	maxCountUsage = "maximum count of changes"
+
+	partsFlag  = "parts"
+	partsAlias = "p"
+	partsUsage = "comma separated list of part counts to change"
+
+	fromBackFlag  = "from-back"
+	fromBackAlias = "fb"
+	fromBackUsage = "comma separated list of part counts to change"
 )
 
-const (
-	separator = "-"
-)
+type App struct{}
 
-const (
-	defaultCodec  = "libx265"
-	defaultPreset = "ultrafast"
-)
-
-var (
-	allowedPresets = []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
-)
-
-var process = func(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.FileInfo, bool, bool) error) error {
-	args := c.Args().Slice()
-	dryRun := c.Bool(dryRunFlag)
-	verbose := c.Bool(verboseFlag)
-
-	if argCount > len(args) {
-		argCount = len(args)
-	}
-
-	filePaths := args[argCount:]
-	args = args[:argCount]
-
-	var fis []os.FileInfo
-
-	for _, filePath := range filePaths {
-		fi, err := os.Stat(filePath)
-		if err != nil {
-			log.Fatalf("argument is not a file: %s, err: %s", filePath, err)
-		}
-
-		if fi.IsDir() {
-			log.Fatalf("file is a directory: %s", filePath)
-		}
-
-		if verbose {
-			log.Printf("file is okay: %s", filePath)
-		}
-
-		fis = append(fis, fi)
-	}
-
-	if len(filePaths) == 0 {
-		log.Fatalf("no files provided")
-
-		return nil
-	}
-
-	for _, fi := range fis {
-		err := fn(c, args, fi, dryRun, verbose)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-
-	return nil
-}
-
-var exec = func(command string) (string, error) {
-	p := script.Exec(command)
-	output, err := p.String()
-	if err != nil {
-		log.Println(err)
-	}
-
-	return output, err
-}
-
-var keyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+func keyFrames(fi os.FileInfo, dryRun bool) error {
 	command := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pkt_pts_time -of csv=p=0 "%s"`, fi.Name())
 
-	if dryRun || verbose {
-		log.Println(command)
-	}
+	l.Println(command)
 
 	if dryRun {
 		return nil
@@ -216,17 +325,18 @@ var keyFrames = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verb
 		numbers = append(numbers, fmt.Sprintf("%.1f", n))
 	}
 
-	log.Printf("file: %s\n", fi.Name())
-	log.Printf("indexes: %s...\n\n", strings.Join(numbers, ", "))
+	l.Printf("file: %s", fi.Name())
+	l.Printf("indexes: %s...", strings.Join(numbers, ", "))
 
 	return nil
 }
 
-var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
-	filePath := fi.Name()
+func (a App) keyFrames(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	return keyFrames(fi, dryRun)
+}
 
-	codec := c.String(codecFlag)
-	crf := c.Int(crfFlag)
+func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool) error {
+	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -256,7 +366,6 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 		return fmt.Errorf("unsupported codec")
 	}
 
-	preset := c.String(presetFlag)
 	found := false
 	for _, p := range allowedPresets {
 		if p == preset {
@@ -287,63 +396,28 @@ var reEncode = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbo
 		return fmt.Errorf("unsupported codec")
 	}
 
-	if dryRun || verbose {
-		log.Println(command)
-	}
+	l.Println(command)
 
 	if dryRun {
 		return nil
 	}
 
 	output, err := exec(command)
-	if verbose {
-		log.Println(output)
-	}
+	l.Println(output)
 
 	return err
 }
 
-func safeRename(oldPath, newPath string, forceOverwrite bool) error {
-	if oldPath == newPath {
-		return nil
-	}
+func (a App) reEncode(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	codec := c.String(codecFlag)
+	crf := c.Int(crfFlag)
+	preset := c.String(presetFlag)
 
-	_, err := os.Stat(newPath)
-	if forceOverwrite || err != nil && os.IsNotExist(err) {
-		return os.Rename(oldPath, newPath)
-	}
-
-	if err != nil {
-		log.Printf("unexpected error during renaming file. old path: '%s', new path: '%s', err: %s", oldPath, newPath, err)
-	}
-
-	log.Printf("file already exists. new path: '%s'", newPath)
-
-	return nil
+	return reEncode(fi, codec, crf, preset, dryRun)
 }
 
-func concat(parts []string, skip int, newPart, ext, separator string) string {
-	start := strings.Join(parts[:skip], separator)
-	end := strings.Join(parts[skip:], separator)
-
-	if start != "" {
-		start += separator
-	}
-	if end != "" {
-		end = separator + end
-	}
-
-	return start + newPart + end + ext
-}
-
-var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+func prefix(fi os.FileInfo, newPart string, skip int, forceOverwrite bool, dryRun bool) error {
 	filePath := fi.Name()
-	if len(args) == 0 {
-		return nil
-	}
-
-	skip := c.Int(skipPartsFlag)
-	newPart := args[0]
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -352,31 +426,32 @@ var prefix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 	}
 
 	parts := strings.Split(basePath, separator)
-	if skip > len(parts) {
-		return fmt.Errorf("more to skip then parts present. file: '%s' skip: %d, parts: %d", basePath, skip, len(parts))
-	}
 
 	newPath := concat(parts, skip, newPart, ext, separator)
 
-	if verbose || dryRun {
-		log.Println(filePath, " -> ", newPath)
-	}
-
 	if dryRun {
+		l.Println(filePath, " -> ", newPath)
+
 		return nil
 	}
 
-	return safeRename(filePath, newPath, c.Bool(forceFlag))
+	return safeRename(filePath, newPath, forceOverwrite)
 }
 
-var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
-	filePath := fi.Name()
+func (a App) prefix(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	if len(args) == 0 {
 		return nil
 	}
 
-	skip := c.Int(skipPartsFlag)
 	newPart := args[0]
+	skip := c.Int(skipPartsFlag)
+	forceOverwrite := c.Bool(forceFlag)
+
+	return prefix(fi, newPart, skip, forceOverwrite, dryRun)
+}
+
+func suffix(fi os.FileInfo, newPart string, skip int, forceOverwrite, dryRun bool) error {
+	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -392,26 +467,25 @@ var suffix = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose
 
 	newPath := concat(parts, skipInverse, newPart, ext, separator)
 
-	if verbose || dryRun {
-		log.Println(filePath, " -> ", newPath)
-	}
-
 	if dryRun {
+		l.Println(filePath, " -> ", newPath)
+
 		return nil
 	}
 
-	return safeRename(filePath, newPath, c.Bool(forceFlag))
+	return safeRename(filePath, newPath, forceOverwrite)
 }
 
-var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
-	filePath := fi.Name()
-	if len(args) < 2 {
-		return nil
-	}
+func (a App) suffix(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	skip := c.Int(skipPartsFlag)
+	newPart := args[0]
+	forceOverwrite := c.Bool(forceFlag)
 
-	search := args[0]
-	replaceWith := args[1]
-	skip := c.Int(skipFindsFlag)
+	return suffix(fi, newPart, skip, forceOverwrite, dryRun)
+}
+
+func replace(fi os.FileInfo, search, replaceWith string, skip int, forceOverwrite bool, dryRun bool) error {
+	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
@@ -420,30 +494,42 @@ var replace = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbos
 	}
 
 	parts := strings.Split(basePath, search)
-	if skip > len(parts) {
-		return fmt.Errorf("more to skip then found. file: '%s', skip: %d, found: %d", basePath, skip, len(parts))
+	if skip > len(parts)-1 {
+		return fmt.Errorf("more to skip than found occurances. file: '%s', skip: %d, found: %d", basePath, skip, len(parts)-1)
 	}
 
-	start := strings.Join(parts[:skip], search)
-	end := strings.Join(parts[skip:], replaceWith)
-
-	newPath := start + end + ext
-	if len(start) > 0 && len(end) > 0 {
-		newPath = start + search + end + ext
+	if len(parts) <= 1 {
+		// safe rename is called to handle standard logging
+		return safeRename(filePath, filePath, false)
 	}
 
-	if verbose || dryRun {
-		log.Printf(`"%s" -> "%s", search: "%s", replace with: "%s"`, filePath, newPath, search, replaceWith)
-	}
+	start := strings.Join(parts[:skip+1], search)
+	end := strings.Join(parts[skip+1:], search)
+
+	newPath := start + replaceWith + end + ext
+	l.Printf(`"%s" -> "%s", search: "%s", replace with: "%s"`, filePath, newPath, search, replaceWith)
 
 	if dryRun {
 		return nil
 	}
 
-	return safeRename(filePath, newPath, c.Bool(forceFlag))
+	return safeRename(filePath, newPath, forceOverwrite)
 }
 
-var mergeParts = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+func (a App) replace(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	if len(args) < 2 {
+		return nil
+	}
+
+	search := args[0]
+	replaceWith := args[1]
+	skip := c.Int(skipFindsFlag)
+	forceOverwrite := c.Bool(forceFlag)
+
+	return replace(fi, search, replaceWith, skip, forceOverwrite, dryRun)
+}
+
+func mergeParts(fi os.FileInfo, regularExpression, deleteText string, forceOverwrite, dryRun bool) error {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -452,7 +538,6 @@ var mergeParts = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, ver
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	regularExpression := c.String(regexpFlag)
 	if regularExpression == "" {
 		regularExpression = "([a-z]+)"
 	} else {
@@ -486,32 +571,36 @@ var mergeParts = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, ver
 		sum += int(s)
 		extra[i] = m[2]
 
-		if verbose {
-			log.Printf("base: %s", basePath)
-			log.Printf("extra: %#v", extra)
-			log.Printf("matches: %#v", m)
-			log.Printf("sum: %d", sum)
-			log.Println()
-		}
+		l.Printf("base: %s", basePath)
+		l.Printf("extra: %#v", extra)
+		l.Printf("matches: %#v", m)
+		l.Printf("sum: %d", sum)
+		l.Println()
 	}
 
 	newPath := fmt.Sprintf("%s-%d%s%s", basePath, sum, strings.Join(extra, "-"), ext)
-	if c.String(deleteFlag) != "" {
-		newPath = strings.Replace(newPath, c.String(deleteFlag), "", 1)
-	}
-
-	if verbose || dryRun {
-		log.Printf(`"%s" -> "%s"`, filePath, newPath)
+	if deleteText != "" {
+		newPath = strings.Replace(newPath, deleteText, "", 1)
 	}
 
 	if dryRun {
+		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+
 		return nil
 	}
 
-	return safeRename(filePath, newPath, c.Bool(forceFlag))
+	return safeRename(filePath, newPath, forceOverwrite)
 }
 
-var addNumber = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+func (a App) mergeParts(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	regularExpression := c.String(regexpFlag)
+	deleteText := c.String(deleteTextFlag)
+	forceOverwrite := c.Bool(forceFlag)
+
+	return mergeParts(fi, regularExpression, deleteText, forceOverwrite, dryRun)
+}
+
+func deleteRegexp(fi os.FileInfo, regularExpression string, regexpGroup, skipFinds, maxCount int, forceOverwrite, dryRun bool) error {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -520,100 +609,224 @@ var addNumber = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verb
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	regularExpression := c.String(regexpFlag)
 	if regularExpression == "" {
-		regularExpression = "([a-z][a-z]+)"
-	} else {
-		re := strings.Replace(strings.Replace(regularExpression, "(", "", -1), ")", "", -1)
-		if len(re) < len(regularExpression)-2 {
-			return errors.New("wrong regular expression received")
-		}
-		if len(re) == len(regularExpression) {
-			regularExpression = `(` + regularExpression + `)`
-		}
+		regularExpression = `-\d+[a-z]+`
 	}
 
-	reFinal := `^(.+)-(\d+)(` + regularExpression + `(-.*)?)$`
-	if verbose {
-		log.Printf("regular expression received: %s", regularExpression)
-		log.Printf("regular expression final: %s", reFinal)
-	}
-
-	r, err := regexp.Compile(reFinal)
+	r, err := regexp.Compile(regularExpression)
 	if err != nil {
 		return err
 	}
 
-	matches := r.FindStringSubmatch(basePath)
-	if verbose {
-		log.Printf("basePath: %s", basePath)
-		log.Printf("matches: %#v", matches)
-	}
+	matches := r.FindAllStringSubmatch(basePath, -1)
+	l.Printf("basePath: %s", basePath)
+	l.Printf("matches: %#v", matches)
 
 	if len(matches) == 0 {
 		return errors.New("no matches")
 	}
 
-	s1, err := strconv.ParseInt(args[0], 10, 32)
-	if err != nil {
-		return err
+	matches = matches[skipFinds:]
+	for i, m := range matches {
+		if maxCount > 0 && i >= maxCount {
+			break
+		}
+
+		basePath = strings.Replace(basePath, m[regexpGroup], "", 1)
 	}
 
-	s2, err := strconv.ParseInt(matches[2], 10, 32)
-	if err != nil {
-		return err
-	}
+	newPath := basePath + ext
 
-	newPath := fmt.Sprintf("%s-%d%s%s", matches[1], s1+s2, matches[3], ext)
+	if dryRun {
+		l.Printf(`"%s" -> "%s"`, filePath, newPath)
 
-	if verbose || dryRun {
-		log.Printf(`"%s" -> "%s"`, filePath, newPath)
-	}
-
-	return safeRename(filePath, newPath, c.Bool(forceFlag))
-}
-
-var deleteParts = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
-	return nil
-}
-
-var insertBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
-	filePath := fi.Name()
-	if len(args) < 1 {
 		return nil
 	}
 
+	return safeRename(filePath, newPath, forceOverwrite)
+}
+
+func (a App) deleteRegexp(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
-	if regularExpression == "" {
-		regularExpression = "[a-z]+"
-	}
-	insert := args[1]
+	forceOverwrite := c.Bool(forceFlag)
+	regexpGroup := c.Int(regexpGroupFlag)
+	skipFinds := c.Int(skipFindsFlag)
+	maxCount := c.Int(maxCountFlag)
+
+	return deleteRegexp(fi, regularExpression, regexpGroup, skipFinds, maxCount, forceOverwrite, dryRun)
+}
+
+func deleteParts(fi os.FileInfo, partsToDelete []int, fromBack, forceOverwrite, dryRun bool) error {
+	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
 	ext := filepath.Ext(filePath)
 	if ext != "" {
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
-	newPath := basePath + insert + ext
 
-	r, err := regexp.Compile(`-\d+` + regularExpression + `-.*$`)
+	m := make(map[int]struct{}, len(partsToDelete))
+	for _, p := range partsToDelete {
+		m[p-1] = struct{}{}
+	}
+
+	parts := strings.Split(basePath, "-")
+	newParts := make([]string, 0, len(parts))
+	if fromBack {
+		for i := 0; i < len(parts); i++ {
+			if _, ok := m[i]; !ok {
+				newParts = append(newParts, parts[len(parts)-i-1])
+			}
+		}
+	} else {
+		for i := 0; i < len(parts); i++ {
+			if _, ok := m[i]; !ok {
+				newParts = append(newParts, parts[i])
+			}
+		}
+	}
+
+	newPath := strings.Join(newParts, "-") + ext
+
+	if dryRun {
+		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+
+		return nil
+	}
+
+	return safeRename(filePath, newPath, forceOverwrite)
+}
+
+func (a App) deleteParts(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	forceOverwrite := c.Bool(forceFlag)
+	fromBack := c.Bool(fromBackFlag)
+
+	strList := strings.Split(args[0], "-")
+	partsToDelete := make([]int, 0, len(strList))
+	for _, str := range strList {
+		num, err := strconv.ParseInt(str, 10, 32)
+		if err != nil {
+			panic(err)
+		}
+
+		partsToDelete = append(partsToDelete, int(num))
+	}
+
+	return deleteParts(fi, partsToDelete, fromBack, forceOverwrite, dryRun)
+}
+
+func addNumber(fi os.FileInfo, regularExpression string, numberToAdd int64, regexpGroup, skipFinds, maxCount int, forceOverwrite, dryRun bool) error {
+	filePath := fi.Name()
+
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	if regularExpression == "" {
+		regularExpression = `-(\d+)[a-z]+`
+		regexpGroup = 1
+	}
+
+	r, err := regexp.Compile(regularExpression)
+	if err != nil {
+		return err
+	}
+
+	matches := r.FindAllStringSubmatch(basePath, -1)
+	l.Printf("basePath: %s", basePath)
+	l.Printf("matches: %#v", matches)
+
+	if len(matches) == 0 {
+		return errors.New("no matches")
+	}
+
+	matches = matches[skipFinds:]
+	for i, m := range matches {
+		if maxCount > 0 && i >= maxCount {
+			break
+		}
+
+		numberFound, err := strconv.ParseInt(m[regexpGroup], 10, 32)
+		if err != nil {
+			return err
+		}
+
+		n1 := strconv.Itoa(int(numberFound))
+		n2 := strconv.Itoa(int(numberFound + numberToAdd))
+		replaceWith := strings.Replace(m[0], n1, n2, 1)
+
+		basePath = strings.Replace(basePath, m[0], replaceWith, 1)
+	}
+
+	newPath := basePath + ext
+
+	if dryRun {
+		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+
+		return nil
+	}
+
+	return safeRename(filePath, newPath, forceOverwrite)
+}
+
+func (a App) addNumber(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	regularExpression := c.String(regexpFlag)
+	forceOverwrite := c.Bool(forceFlag)
+	regexpGroup := c.Int(regexpGroupFlag)
+	skipFinds := c.Int(skipFindsFlag)
+	maxCount := c.Int(maxCountFlag)
+
+	numberToAdd, err := strconv.ParseInt(args[0], 10, 32)
+	if err != nil {
+		return err
+	}
+
+	return addNumber(fi, regularExpression, numberToAdd, regexpGroup, skipFinds, maxCount, forceOverwrite, dryRun)
+}
+
+func insertBefore(fi os.FileInfo, regularExpression, insertText string, forceOverwrite, dryRun bool) error {
+	filePath := fi.Name()
+
+	if regularExpression == "" {
+		regularExpression = "\\d+[a-z]+"
+	}
+
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	r, err := regexp.Compile(regularExpression)
 	if err != nil {
 		return fmt.Errorf("regexp failed, err: %w", err)
 	}
 	matched := r.FindString(basePath)
+
+	// fallback in case of no match is to insert text at the end of the string
+	newPath := basePath + "-" + insertText + ext
 	if matched != "" {
-		newPath = strings.Replace(basePath, matched, insert+matched, 1) + ext
+		newPath = strings.Replace(basePath, matched, insertText+"-"+matched, 1) + ext
 	}
 
-	if verbose || dryRun {
-		log.Printf(`"%s" -> "%s", found: "%s", new: "%s"`, filePath, newPath, matched, insert+matched)
-	}
+	l.Printf(`"%s" -> "%s", found: "%s", new: "%s"`, filePath, newPath, matched, insertText+matched)
 
 	if dryRun {
 		return nil
 	}
 
-	return safeRename(filePath, newPath, c.Bool(forceFlag))
+	return safeRename(filePath, newPath, forceOverwrite)
+}
+
+func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	regularExpression := c.String(regexpFlag)
+	insert := args[1]
+
+	forceOverwrite := c.Bool(forceFlag)
+
+	return insertBefore(fi, regularExpression, insert, forceOverwrite, dryRun)
 }
 
 var wellKnown = map[string]string{
@@ -628,38 +841,130 @@ var wellKnown = map[string]string{
 
 var dimensionsRegexp = regexp.MustCompile(`\d+x\d+$`)
 
-var insertDimensionsBefore = func(c *cli.Context, args []string, fi os.FileInfo, dryRun, verbose bool) error {
+func insertDimensionsBefore(fi os.FileInfo, regularExpression string, forceOverwrite, dryRun bool) error {
 	fp := strings.Replace(fi.Name(), " ", "\\ ", -1)
 	fp = strings.Replace(fp, "'", "\\'", -1)
 	cmd := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 %s`, fp)
 
-	output, err := exec(cmd)
+	dimensions, err := exec(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to probe file. command: '%s', err: %w", cmd, err)
 	}
 
-	output = strings.TrimSpace(output)
-	if verbose {
-		log.Printf("dimenensions found. file: '%s', dimensions: '%s'", fp, output)
-	}
+	dimensions = strings.TrimSpace(dimensions)
+	l.Printf("dimenensions found. file: '%s', dimensions: '%s'", fp, dimensions)
 
-	output = dimensionsRegexp.FindString(output)
-	if verbose {
-		log.Printf("dimensions found in multiline output. file: '%s', dimensions: '%s'", fp, output)
-	}
+	dimensions = dimensionsRegexp.FindString(dimensions)
+	l.Printf("dimensions found in multiline output. file: '%s', dimensions: '%s'", fp, dimensions)
 
-	if output == "" {
+	if dimensions == "" {
 		return fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
 	}
 
-	if found, ok := wellKnown[output]; ok {
-		output = found
+	if found, ok := wellKnown[dimensions]; ok {
+		dimensions = found
 	}
 
-	return insertBefore(c, append(args, `-`+output), fi, dryRun, verbose)
+	return insertBefore(fi, regularExpression, dimensions, forceOverwrite, dryRun)
+}
+
+func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	regularExpression := c.String(regexpFlag)
+	forceOverwrite := c.Bool(forceFlag)
+
+	return insertDimensionsBefore(fi, regularExpression, forceOverwrite, dryRun)
 }
 
 func main() {
+	a := App{}
+
+	allFlags := map[string]cli.Flag{
+		backwardsFlag: &cli.BoolFlag{
+			Name:    backwardsFlag,
+			Aliases: []string{backwardsAlias},
+			Value:   true,
+			Usage:   backwardsUsage,
+		},
+		dryRunFlag: &cli.BoolFlag{
+			Name:    dryRunFlag,
+			Aliases: []string{dryRunAlias},
+			Value:   false,
+			Usage:   dryRunUsage,
+		},
+		verboseFlag: &cli.BoolFlag{
+			Name:    verboseFlag,
+			Aliases: []string{verboseAlias},
+			Value:   false,
+			Usage:   verboseUsage,
+		},
+		forceFlag: &cli.BoolFlag{
+			Name:    forceFlag,
+			Aliases: []string{forceAlias},
+			Value:   false,
+			Usage:   forceUsage,
+		},
+		codecFlag: &cli.StringFlag{
+			Name:  codecFlag,
+			Usage: codecUsage,
+			Value: defaultCodec,
+		},
+		presetFlag: &cli.StringFlag{
+			Name:  presetFlag,
+			Usage: fmt.Sprintf(presetUsage, strings.Join(allowedPresets, ", ")),
+			Value: defaultPreset,
+		},
+		crfFlag: &cli.IntFlag{
+			Name:  crfFlag,
+			Usage: crfUsage,
+		},
+		skipPartsFlag: &cli.IntFlag{
+			Name:    skipPartsFlag,
+			Aliases: []string{skipPartsAlias},
+			Usage:   skipPartsUsage,
+		},
+		skipFindsFlag: &cli.IntFlag{
+			Name:    skipFindsFlag,
+			Aliases: []string{skipFindsAlias},
+			Usage:   skipFindsUsage,
+		},
+		regexpFlag: &cli.StringFlag{
+			Name:    regexpFlag,
+			Aliases: []string{regexpAlias},
+			Value:   "",
+			Usage:   regexpUsage,
+		},
+		deleteTextFlag: &cli.StringFlag{
+			Name:    deleteTextFlag,
+			Aliases: []string{deleteTextAlias},
+			Value:   "",
+			Usage:   deleteTextUsage,
+		},
+		regexpGroupFlag: &cli.IntFlag{
+			Name:    regexpGroupFlag,
+			Aliases: []string{regexpGroupAlias},
+			Value:   0,
+			Usage:   regexpGroupUsage,
+		},
+		maxCountFlag: &cli.IntFlag{
+			Name:    maxCountFlag,
+			Aliases: []string{maxCountAlias},
+			Value:   0,
+			Usage:   maxCountUsage,
+		},
+		partsFlag: &cli.StringFlag{
+			Name:    partsFlag,
+			Aliases: []string{partsAlias},
+			Value:   "",
+			Usage:   partsUsage,
+		},
+		fromBackFlag: &cli.BoolFlag{
+			Name:    fromBackFlag,
+			Aliases: []string{fromBackAlias},
+			Value:   false,
+			Usage:   fromBackUsage,
+		},
+	}
+
 	app := &cli.App{
 		Name: "ffr",
 		Commands: []*cli.Command{
@@ -669,41 +974,16 @@ func main() {
 				ArgsUsage:   reencodeArgsUsage,
 				Description: reencodeDescription,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.StringFlag{
-						Name:  codecFlag,
-						Usage: codecUsage,
-						Value: defaultCodec,
-					},
-					&cli.StringFlag{
-						Name:  presetFlag,
-						Usage: fmt.Sprintf(presetUsage, strings.Join(allowedPresets, ", ")),
-						Value: defaultPreset,
-					},
-					&cli.IntFlag{
-						Name:  crfFlag,
-						Usage: crfUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[codecFlag],
+					allFlags[presetFlag],
+					allFlags[crfFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 0, reEncode)
+					return process(c, 0, a.reEncode)
 				},
 			},
 			{
@@ -712,21 +992,12 @@ func main() {
 				Usage:     keyFramesUsage,
 				ArgsUsage: keyFramesArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 0, keyFrames)
+					return process(c, 0, a.keyFrames)
 				},
 			},
 			{
@@ -735,32 +1006,14 @@ func main() {
 				Usage:     prefixUsage,
 				ArgsUsage: prefixArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.IntFlag{
-						Name:    skipPartsFlag,
-						Aliases: []string{skipPartsAlias},
-						Usage:   skipPartsUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[skipPartsFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, prefix)
+					return process(c, 1, a.prefix)
 				},
 			},
 			{
@@ -769,32 +1022,14 @@ func main() {
 				Usage:     suffixUsage,
 				ArgsUsage: suffixArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.IntFlag{
-						Name:    skipPartsFlag,
-						Aliases: []string{skipPartsAlias},
-						Usage:   skipPartsUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[skipPartsFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, suffix)
+					return process(c, 1, a.suffix)
 				},
 			},
 			{
@@ -803,32 +1038,14 @@ func main() {
 				Usage:     replaceUsage,
 				ArgsUsage: replaceArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.IntFlag{
-						Name:    skipFindsFlag,
-						Aliases: []string{skipFindsAlias},
-						Usage:   skipFindsUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[skipFindsFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 2, replace)
+					return process(c, 2, a.replace)
 				},
 			},
 			{
@@ -837,39 +1054,16 @@ func main() {
 				Usage:     mergePartsUsage,
 				ArgsUsage: mergePartsArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.StringFlag{
-						Name:    regexpFlag,
-						Aliases: []string{regexpAlias},
-						Value:   "",
-						Usage:   regexpUsage,
-					},
-					&cli.StringFlag{
-						Name:    deleteFlag,
-						Aliases: []string{deleteAlias},
-						Value:   "",
-						Usage:   deleteUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[skipPartsFlag],
+					allFlags[regexpFlag],
+					allFlags[deleteTextFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 0, mergeParts)
+					return process(c, 0, a.mergeParts)
 				},
 			},
 			{
@@ -878,33 +1072,36 @@ func main() {
 				Usage:     addNumberUsage,
 				ArgsUsage: addNumberArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.StringFlag{
-						Name:    regexpFlag,
-						Aliases: []string{regexpAlias},
-						Value:   "",
-						Usage:   regexpUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
+					allFlags[regexpGroupFlag],
+					allFlags[skipFindsFlag],
+					allFlags[maxCountFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, addNumber)
+					return process(c, 1, a.addNumber)
+				},
+			},
+			{
+				Name:      deleteRegexpCommand,
+				Aliases:   strings.Split(deletePartsAliases, ", "),
+				Usage:     deleteRegexpUsage,
+				ArgsUsage: deleteRegexpArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
+					allFlags[regexpGroupFlag],
+					allFlags[skipPartsFlag],
+					allFlags[maxCountFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 0, a.deleteRegexp)
 				},
 			},
 			{
@@ -913,33 +1110,15 @@ func main() {
 				Usage:     deletePartsUsage,
 				ArgsUsage: deletePartsArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.StringFlag{
-						Name:    regexpFlag,
-						Aliases: []string{regexpAlias},
-						Value:   "",
-						Usage:   regexpUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[partsFlag],
+					allFlags[fromBackFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, deleteParts)
+					return process(c, 1, a.deleteParts)
 				},
 			},
 			{
@@ -948,33 +1127,14 @@ func main() {
 				Usage:     insertBeforeUsage,
 				ArgsUsage: insertBeforeArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.StringFlag{
-						Name:    regexpFlag,
-						Aliases: []string{regexpAlias},
-						Value:   "",
-						Usage:   regexpUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, insertBefore)
+					return process(c, 1, a.insertBefore)
 				},
 			},
 			{
@@ -983,33 +1143,14 @@ func main() {
 				Usage:     insertDimensionsUsage,
 				ArgsUsage: insertDimensionsArgsUsage,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:    dryRunFlag,
-						Aliases: []string{dryRunAlias},
-						Value:   false,
-						Usage:   dryRunUsage,
-					},
-					&cli.BoolFlag{
-						Name:    verboseFlag,
-						Aliases: []string{verboseAlias},
-						Value:   false,
-						Usage:   verboseUsage,
-					},
-					&cli.BoolFlag{
-						Name:    forceFlag,
-						Aliases: []string{forceAlias},
-						Value:   false,
-						Usage:   forceUsage,
-					},
-					&cli.StringFlag{
-						Name:    regexpFlag,
-						Aliases: []string{regexpAlias},
-						Value:   "",
-						Usage:   regexpUsage,
-					},
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[verboseFlag],
+					allFlags[forceFlag],
+					allFlags[regexpFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 1, insertDimensionsBefore)
+					return process(c, 0, a.insertDimensionsBefore)
 				},
 			},
 		},
