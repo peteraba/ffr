@@ -319,16 +319,16 @@ func Test_deleteParts(t *testing.T) {
 			want: []string{"foo.txt"},
 		},
 		{
-			name: "delete last",
-			need: []string{"foo-1bar.txt"},
+			name: "delete last and third last",
+			need: []string{"foo-bar-baz-quix-quiix.txt"},
 			args: args{
-				filePath:       "foo-1bar.txt",
-				partsToDelete:  []int{1},
+				filePath:       "foo-bar-baz-quix-quiix.txt",
+				partsToDelete:  []int{1, 3},
 				fromBack:       true,
 				forceOverwrite: false,
 				dryRun:         false,
 			},
-			want: []string{"foo.txt"},
+			want: []string{"foo-bar-quix.txt"},
 		},
 		{
 			name: "dry run",

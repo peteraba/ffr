@@ -137,11 +137,11 @@ func process(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.Fi
 	dryRun := c.Bool(dryRunFlag)
 
 	l = logger{
-		silent: !c.Bool(verboseFlag) || !c.Bool(dryRunFlag),
+		silent: !(c.Bool(verboseFlag) || c.Bool(dryRunFlag)),
 	}
 
 	if argCount > len(args) {
-		argCount = len(args)
+		return errors.New("not enough arguments")
 	}
 
 	fileInfoList := getFileInfoList(args[argCount:], c.Bool(backwardsFlag))
@@ -543,24 +543,21 @@ func deleteParts(fi os.FileInfo, partsToDelete []int, fromBack, forceOverwrite, 
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
+	parts := strings.Split(basePath, "-")
+
 	m := make(map[int]struct{}, len(partsToDelete))
 	for _, p := range partsToDelete {
-		m[p-1] = struct{}{}
+		p2 := p - 1
+		if fromBack {
+			p2 = len(parts) - p
+		}
+		m[p2] = struct{}{}
 	}
 
-	parts := strings.Split(basePath, "-")
 	newParts := make([]string, 0, len(parts))
-	if fromBack {
-		for i := 0; i < len(parts); i++ {
-			if _, ok := m[i]; !ok {
-				newParts = append(newParts, parts[len(parts)-i-1])
-			}
-		}
-	} else {
-		for i := 0; i < len(parts); i++ {
-			if _, ok := m[i]; !ok {
-				newParts = append(newParts, parts[i])
-			}
+	for i := 0; i < len(parts); i++ {
+		if _, ok := m[i]; !ok {
+			newParts = append(newParts, parts[i])
 		}
 	}
 
@@ -579,7 +576,7 @@ func (a App) deleteParts(c *cli.Context, args []string, fi os.FileInfo, dryRun b
 	forceOverwrite := c.Bool(forceFlag)
 	fromBack := c.Bool(fromBackFlag)
 
-	strList := strings.Split(args[0], "-")
+	strList := strings.Split(args[0], ",")
 	partsToDelete := make([]int, 0, len(strList))
 	for _, str := range strList {
 		num, err := strconv.ParseInt(str, 10, 32)
@@ -772,7 +769,16 @@ Result:      foo-1080p-4ffc.mp4`
 	deletePartsCommand   = "delete-parts"
 	deletePartsAliases   = "dp"
 	deletePartsUsage     = "delete certain parts based on a comma separated list of parts"
-	deletePartsArgsUsage = "[comma-separated-list] [files...]"
+	deletePartsArgsUsage = `[comma-separated-list] [files...]
+
+EXAMPLES:
+Description: Delete the first and third segments in the file name 'foo-bar-baz-2ffc.mp4'
+Command:     ffr delete-parts 1,3 foo-bar-baz-2ffc.mp4
+Result:      bar-2ffc.mp4
+
+Description: Delete the last and the third last segments in the file name 'foo-bar-baz-2ffc.mp4'
+Command:     ffr delete-parts --fb 1,3 foo-bar-baz-2ffc.mp4
+Result:      foo-baz.mp4`
 
 	deleteRegexpCommand   = "delete-regexp"
 	deleteRegexpAliases   = "dr"
