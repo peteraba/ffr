@@ -1535,3 +1535,96 @@ func Test_suffix(t *testing.T) {
 		})
 	}
 }
+
+func Test_crop(t *testing.T) {
+	createExampleVideo := func(filePath string) error {
+		_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i color=color=red -t 30 %s`, filePath))
+		return err
+	}
+
+	type args struct {
+		filePath          string
+		regularExpression string
+		insertText        string
+		forceOverwrite    bool
+		dryRun            bool
+		width, height     int
+		x, y              string
+	}
+	tests := []struct {
+		name       string
+		need       []string
+		args       args
+		wantOutput string
+		want       []string
+	}{
+		{
+			name: "default-120-80-left-top",
+			// 320x240
+			need: []string{"foo.mp4"},
+			args: args{
+				filePath: "foo.mp4",
+				dryRun:   false,
+				width:    120,
+				height:   80,
+				x:        "left",
+				y:        "top",
+			},
+			wantOutput: "ffmpeg -i \"foo.mp4\" -filter:v \"crop=120:80:0:0\" \"foo-120x80.mp4\"",
+			want:       []string{"foo-120x80.mp4"},
+		},
+		{
+			name: "default-120-80-center-center",
+			// 320x240
+			need: []string{"foo.mp4"},
+			args: args{
+				filePath: "foo.mp4",
+				dryRun:   false,
+				width:    120,
+				height:   80,
+				x:        "center",
+				y:        "center",
+			},
+			wantOutput: "ffmpeg -i \"foo.mp4\" -filter:v \"crop=120:80:100:80\" \"foo-120x80.mp4\"",
+			want:       []string{"foo-120x80.mp4"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				// tear down
+				for _, fileName := range tt.want {
+					assert.FileExists(t, fileName)
+
+					err := os.Remove(fileName)
+					require.NoError(t, err)
+				}
+				for _, fileName := range tt.need {
+					_ = os.Remove(fileName)
+				}
+			}()
+
+			var err error
+
+			// setup
+			for _, filePath := range tt.need {
+				_ = os.Remove(filePath)
+				err = createExampleVideo(filePath)
+				require.NoError(t, err)
+			}
+			fi, err := os.Stat(tt.args.filePath)
+			require.NoError(t, err)
+
+			// execute
+			a := tt.args
+			result := crop(fi, a.width, a.height, a.x, a.y, a.forceOverwrite, a.dryRun)
+
+			// assert
+			assert.NoError(t, result)
+			for _, fileName := range tt.want {
+				assert.FileExists(t, fileName)
+			}
+			assert.Contains(t, l.history, tt.wantOutput)
+		})
+	}
+}

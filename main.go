@@ -716,24 +716,38 @@ var wellKnown = map[string]string{
 
 var dimensionsRegexp = regexp.MustCompile(`\d+x\d+$`)
 
-func insertDimensionsBefore(fi os.FileInfo, regularExpression string, forceOverwrite, dryRun bool) error {
+func getDimensions(fi os.FileInfo) (string, error) {
 	fp := strings.Replace(fi.Name(), " ", "\\ ", -1)
 	fp = strings.Replace(fp, "'", "\\'", -1)
 	cmd := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 %s`, fp)
+	l.Printf(cmd)
 
 	dimensions, err := exec(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to probe file. command: '%s', err: %w", cmd, err)
+		return "", fmt.Errorf("failed to probe file. command: '%s', err: %w", cmd, err)
+	}
+
+	if dimensions == "" {
+		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
 	}
 
 	dimensions = strings.TrimSpace(dimensions)
-	l.Printf("dimenensions found. file: '%s', dimensions: '%s'", fp, dimensions)
+	l.Printf("dimensions found. file: '%s', dimensions: '%s'", fp, dimensions)
 
 	dimensions = dimensionsRegexp.FindString(dimensions)
 	l.Printf("dimensions found in multiline output. file: '%s', dimensions: '%s'", fp, dimensions)
 
 	if dimensions == "" {
-		return fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
+		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
+	}
+
+	return dimensions, nil
+}
+
+func insertDimensionsBefore(fi os.FileInfo, regularExpression string, forceOverwrite, dryRun bool) error {
+	dimensions, err := getDimensions(fi)
+	if err != nil {
+		return err
 	}
 
 	if found, ok := wellKnown[dimensions]; ok {
@@ -748,6 +762,112 @@ func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInf
 	forceOverwrite := c.Bool(forceFlag)
 
 	return insertDimensionsBefore(fi, regularExpression, forceOverwrite, dryRun)
+}
+
+func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun bool) error {
+	basePath := filepath.Base(fi.Name())
+	ext := filepath.Ext(fi.Name())
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	dimensions, err := getDimensions(fi)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve video dimensions. err: %w", err)
+	}
+
+	d := strings.Split(dimensions, "x")
+	if len(d) != 2 {
+		return fmt.Errorf("wrong old dimensions: %s", dimensions)
+	}
+
+	widthOrigin, err := strconv.Atoi(d[0])
+	if err != nil {
+		return fmt.Errorf("wrong old dimensions: %s", dimensions)
+	}
+
+	heightOrigin, err := strconv.Atoi(d[1])
+	if err != nil {
+		return fmt.Errorf("wrong old dimensions: %s", dimensions)
+	}
+
+	if widthOrigin < width || heightOrigin < height {
+		return fmt.Errorf("wrong dimensions. new dimensions: %dx%d, old dimensions: %s", width, height, dimensions)
+	}
+
+	var xPos int
+	switch x {
+	case "left":
+	case "center":
+		xPos = (widthOrigin - width) / 2
+	case "right":
+		xPos = widthOrigin - width
+	default:
+		xPos, err = strconv.Atoi(x)
+		if err != nil {
+			return fmt.Errorf("wrong instructions, x: %s", x)
+		}
+	}
+
+	var yPos int
+	switch y {
+	case "top":
+	case "center":
+		yPos = (heightOrigin - height) / 2
+	case "bottom":
+		yPos = heightOrigin - height
+	default:
+		yPos, err = strconv.Atoi(y)
+		if err != nil {
+			return fmt.Errorf("wrong instructions, y: %s", y)
+		}
+	}
+
+	if widthOrigin < width+yPos || heightOrigin < height+xPos {
+		return fmt.Errorf("wrong instructions. new dimensions: %dx%d, pox x: %d, pos y: %d, old dimensions: %s", width, height, xPos, yPos, dimensions)
+	}
+
+	newPath := fmt.Sprintf("%s-%dx%d%s", basePath, width, height, ext)
+
+	cmd := fmt.Sprintf(`ffmpeg -i "%s" -filter:v "crop=%d:%d:%d:%d" "%s"`, fi.Name(), width, height, xPos, yPos, newPath)
+	l.Printf(cmd)
+
+	if dryRun {
+		return nil
+	}
+
+	if !forceOverwrite {
+		_, err = os.Stat(newPath)
+		if err == nil || !os.IsNotExist(err) {
+			return fmt.Errorf("file already exists. path: %s, err: %w", newPath, err)
+		}
+	}
+
+	output, err := exec(cmd)
+	if err != nil {
+		l.Printf(output)
+
+		return fmt.Errorf("failed to crop video. err: %w", err)
+	}
+
+	return nil
+}
+
+func (a App) crop(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	forceOverwrite := c.Bool(forceFlag)
+
+	width, err := strconv.Atoi(args[0])
+	if err != nil {
+		return fmt.Errorf("wrong instructions, width: %s", args[0])
+	}
+	height, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("wrong instructions, height: %s", args[1])
+	}
+	x := args[2]
+	y := args[3]
+
+	return crop(fi, width, height, x, y, forceOverwrite, dryRun)
 }
 
 // commands
@@ -828,6 +948,11 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`
 	suffixAliases   = "s"
 	suffixUsage     = "suffix file names with a fixed string"
 	suffixArgsUsage = "[text to insert] [files...]"
+
+	cropCommand   = "crop"
+	cropAliases   = "c"
+	cropUsage     = "crop video"
+	cropArgsUsage = "[width] [height] [left|center|right|px from left] [top|center|bottom|px from top] [files...]"
 )
 
 // flags
@@ -1166,6 +1291,21 @@ func main() {
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.suffix)
+				},
+			},
+			{
+				Name:      cropCommand,
+				Aliases:   strings.Split(cropAliases, ", "),
+				Usage:     cropUsage,
+				ArgsUsage: cropArgsUsage,
+				Flags: []cli.Flag{
+					allFlags[backwardsFlag],
+					allFlags[dryRunFlag],
+					allFlags[forceFlag],
+					allFlags[verboseFlag],
+				},
+				Action: func(c *cli.Context) error {
+					return process(c, 4, a.crop)
 				},
 			},
 		},
