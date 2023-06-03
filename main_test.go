@@ -15,6 +15,23 @@ func init() {
 	}
 }
 
+func createExampleVideo(t *testing.T, filePath string) {
+	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=320x240:rate=30 %s`, filePath))
+	require.NoError(t, err)
+}
+
+func cleanUp(t *testing.T, want, need []string) {
+	for _, fileName := range want {
+		assert.FileExists(t, fileName)
+
+		err := os.Remove(fileName)
+		require.NoError(t, err)
+	}
+	for _, fileName := range need {
+		_ = os.Remove(fileName)
+	}
+}
+
 func Test_addNumber(t *testing.T) {
 	type args struct {
 		filePath          string
@@ -155,18 +172,7 @@ func Test_addNumber(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -357,18 +363,7 @@ func Test_deleteParts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -510,18 +505,7 @@ func Test_deleteRegexp(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -637,18 +621,7 @@ func Test_insertBefore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -673,11 +646,6 @@ func Test_insertBefore(t *testing.T) {
 }
 
 func Test_insertDimensionsBefore(t *testing.T) {
-	createExampleVideo := func(filePath string) error {
-		_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i color=color=red -t 30 %s`, filePath))
-		return err
-	}
-
 	type args struct {
 		filePath          string
 		regularExpression string
@@ -727,26 +695,14 @@ func Test_insertDimensionsBefore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
 			// setup
 			for _, filePath := range tt.need {
 				require.NoFileExists(t, filePath)
-				err = createExampleVideo(filePath)
-				require.NoError(t, err)
+				createExampleVideo(t, filePath)
 			}
 
 			// execute
@@ -792,15 +748,7 @@ func Test_getFileInfoList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.args.filePaths {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-			}()
+			defer cleanUp(t, tt.want, nil)
 
 			var err error
 
@@ -822,17 +770,11 @@ func Test_getFileInfoList(t *testing.T) {
 }
 
 func Test_keyFrames(t *testing.T) {
-	createExampleVideo := func(filePath string) error {
-		_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i color=color=red -t 30 %s`, filePath))
-		return err
-	}
-
 	type args struct {
 		filePath          string
 		regularExpression string
 		insertText        string
 		forceOverwrite    bool
-		dryRun            bool
 	}
 	tests := []struct {
 		name       string
@@ -846,40 +788,27 @@ func Test_keyFrames(t *testing.T) {
 			need: []string{"foo.mp4"},
 			args: args{
 				filePath: "foo.mp4",
-				dryRun:   false,
 			},
-			wantOutput: "indexes: 0.0, 10.0, 20.0...",
+			wantOutput: "indexes: 0.0, 8.3...",
 			want:       []string{"foo.mp4"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
 			// setup
 			for _, filePath := range tt.need {
 				_ = os.Remove(filePath)
-				err = createExampleVideo(filePath)
-				require.NoError(t, err)
+				createExampleVideo(t, filePath)
 			}
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
 
 			// execute
-			result := keyFrames(fi, tt.args.dryRun)
+			result := keyFrames(fi)
 
 			// assert
 			assert.NoError(t, result)
@@ -968,18 +897,7 @@ func Test_mergeParts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -1081,18 +999,7 @@ func Test_prefix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -1117,11 +1024,6 @@ func Test_prefix(t *testing.T) {
 }
 
 func Test_reEncode(t *testing.T) {
-	createExampleVideo := func(filePath string) error {
-		_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i color=color=red -t 30 %s`, filePath))
-		return err
-	}
-
 	type args struct {
 		filePath string
 		codec    string
@@ -1210,32 +1112,20 @@ func Test_reEncode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, filePath := range tt.want {
-					assert.FileExists(t, filePath)
-
-					err := os.Remove(filePath)
-					require.NoError(t, err)
-				}
-				for _, filePath := range tt.need {
-					_ = os.Remove(filePath)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
 			// setup
 			for _, filePath := range tt.need {
 				_ = os.Remove(filePath)
-				err = createExampleVideo(filePath)
-				require.NoError(t, err)
+				createExampleVideo(t, filePath)
 			}
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
 
 			// execute
-			result := reEncode(fi, tt.args.codec, tt.args.crf, tt.args.preset, tt.args.dryRun)
+			_, result := reEncode(fi, tt.args.codec, tt.args.crf, tt.args.preset, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
@@ -1317,18 +1207,7 @@ func Test_replace(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -1401,18 +1280,7 @@ func Test_safeRename(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -1501,18 +1369,7 @@ func Test_suffix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
@@ -1537,11 +1394,6 @@ func Test_suffix(t *testing.T) {
 }
 
 func Test_crop(t *testing.T) {
-	createExampleVideo := func(filePath string) error {
-		_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i color=color=red -t 30 %s`, filePath))
-		return err
-	}
-
 	type args struct {
 		filePath          string
 		regularExpression string
@@ -1591,26 +1443,14 @@ func Test_crop(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				// tear down
-				for _, fileName := range tt.want {
-					assert.FileExists(t, fileName)
-
-					err := os.Remove(fileName)
-					require.NoError(t, err)
-				}
-				for _, fileName := range tt.need {
-					_ = os.Remove(fileName)
-				}
-			}()
+			defer cleanUp(t, tt.want, tt.need)
 
 			var err error
 
 			// setup
 			for _, filePath := range tt.need {
 				_ = os.Remove(filePath)
-				err = createExampleVideo(filePath)
-				require.NoError(t, err)
+				createExampleVideo(t, filePath)
 			}
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)

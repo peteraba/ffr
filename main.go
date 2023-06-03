@@ -170,23 +170,22 @@ func exec(command string) (string, error) {
 
 type App struct{}
 
-func keyFrames(fi os.FileInfo, dryRun bool) error {
-	command := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pkt_pts_time -of csv=p=0 "%s"`, fi.Name())
+func keyFrames(fi os.FileInfo) error {
+	command := fmt.Sprintf(`ffprobe -loglevel error -select_streams v:0 -show_entries packet=pts_time,flags -of csv=print_section=0 "%s"`, fi.Name())
 
 	l.Println(command)
 
-	if dryRun {
-		return nil
-	}
+	res, err := script.Exec(command).Match(",K__").FilterLine(func(line string) string {
+		return strings.Split(line, ",")[0]
+	}).Slice()
 
-	output, err := exec(command)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to retrieve keyframes. err: %w", err)
 	}
 
 	maxCount := 4
 	var numbers []string
-	for i, line := range strings.Split(output, "\n") {
+	for i, line := range res {
 		if i >= maxCount {
 			break
 		}
@@ -210,10 +209,10 @@ func keyFrames(fi os.FileInfo, dryRun bool) error {
 }
 
 func (a App) keyFrames(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
-	return keyFrames(fi, dryRun)
+	return keyFrames(fi)
 }
 
-func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool) error {
+func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool) (string, error) {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -241,7 +240,7 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 			crf = 31
 		}
 	default:
-		return fmt.Errorf("unsupported codec")
+		return "", fmt.Errorf("unsupported codec")
 	}
 
 	found := false
@@ -252,7 +251,7 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 		}
 	}
 	if !found {
-		return fmt.Errorf("invalid preset. preset: %s", preset)
+		return "", fmt.Errorf("invalid preset. preset: %s", preset)
 	}
 
 	outputBasePath := fmt.Sprintf("%s-%s-%d-%s", basePath, codec, crf, preset)
@@ -261,29 +260,33 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 	switch codec {
 	case "libx265":
 		// https://trac.ffmpeg.org/wiki/Encode/H.265
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx265 -x265-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 -tag:v hvc1 "%s.mp4"`, filePath, preset, crf, outputBasePath)
+		outputBasePath += ".mp4"
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx265 -x265-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 -tag:v hvc1 "%s"`, filePath, preset, crf, outputBasePath)
 		break
 	case "libx264":
 		// https://trac.ffmpeg.org/wiki/Encode/H.264
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx264 -x264-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 "%s.mp4"`, filePath, preset, crf, outputBasePath)
+		outputBasePath += ".mp4"
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx264 -x264-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 "%s"`, filePath, preset, crf, outputBasePath)
 		break
 	case "vp9":
+		outputBasePath += ".mkv"
 		// https://trac.ffmpeg.org/wiki/Encode/VP9
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v vp9 -crf %d -b:v 0 -c:a aac "%s.mkv"`, filePath, crf, outputBasePath)
+		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v vp9 -g 1 -crf %d -b:v 0 -c:a aac "%s"`, filePath, crf, outputBasePath)
 	default:
-		return fmt.Errorf("unsupported codec")
+		return "", fmt.Errorf("unsupported codec")
 	}
 
-	l.Println(command)
+	l.Printf("new path: %s", outputBasePath)
+	l.Printf("command: %s", command)
 
 	if dryRun {
-		return nil
+		return outputBasePath, nil
 	}
 
 	output, err := exec(command)
 	l.Println(output)
 
-	return err
+	return outputBasePath, err
 }
 
 func (a App) reEncode(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
@@ -291,7 +294,9 @@ func (a App) reEncode(c *cli.Context, args []string, fi os.FileInfo, dryRun bool
 	crf := c.Int(crfFlag)
 	preset := c.String(presetFlag)
 
-	return reEncode(fi, codec, crf, preset, dryRun)
+	_, err := reEncode(fi, codec, crf, preset, dryRun)
+
+	return err
 }
 
 func prefix(fi os.FileInfo, newPart string, skip int, forceOverwrite bool, dryRun bool) error {
