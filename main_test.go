@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"testing"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"os"
+	"testing"
+	"time"
 )
 
 func init() {
@@ -16,7 +16,7 @@ func init() {
 }
 
 func createExampleVideo(t *testing.T, filePath string) {
-	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=320x240:rate=30 %s`, filePath))
+	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=320x240:rate=30 "%s"`, filePath))
 	require.NoError(t, err)
 }
 
@@ -646,6 +646,45 @@ func Test_insertBefore(t *testing.T) {
 }
 
 func Test_insertDimensionsBefore(t *testing.T) {
+	t.Run("does not overwrite by default", func(t *testing.T) {
+		t.Parallel()
+
+		forceOverwrite := false
+		dryRun := false
+		expectedFile := "1-320x240.mp4"
+
+		vidPath := "1.mp4"
+		want := []string{vidPath, expectedFile}
+		need := []string{vidPath, expectedFile}
+
+		defer cleanUp(t, want, need)
+
+		var err error
+
+		// setup
+		for _, filePath := range need {
+			require.NoFileExists(t, filePath)
+			createExampleVideo(t, filePath)
+		}
+
+		allWritten := time.Now()
+
+		// execute
+		fi, err := os.Stat(vidPath)
+		require.NoError(t, err)
+		result := insertDimensionsBefore(fi, "", forceOverwrite, dryRun)
+
+		// assert
+		assert.NoError(t, result)
+		for _, fileName := range want {
+			assert.FileExists(t, fileName)
+		}
+
+		// same as before
+		fi2, err := os.Stat(expectedFile)
+		assert.Greater(t, allWritten.UnixNano(), fi2.ModTime().UnixNano())
+	})
+
 	type args struct {
 		filePath          string
 		regularExpression string
@@ -693,15 +732,26 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			want: []string{"foo-320x240-BAR.mp4"},
 		},
 		{
-			name: "default with regular expression",
-			need: []string{"els4ai.mp4"},
+			name: "number in the middle",
+			need: []string{"foo4bar.mp4"},
 			args: args{
-				filePath:          "els4ai.mp4",
+				filePath:          "foo4bar.mp4",
 				regularExpression: "",
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
-			want: []string{"els4ai-320x240.mp4"},
+			want: []string{"foo4bar-320x240.mp4"},
+		},
+		{
+			name: "extreme tendencies",
+			need: []string{"foobar-barbaz-Foo bar baz 4 quix-0cut-1ffc-bar-baz-2foo-baz.mp4"},
+			args: args{
+				filePath:          "foobar-barbaz-Foo bar baz 4 quix-0cut-1ffc-bar-baz-2foo-baz.mp4",
+				regularExpression: "",
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			want: []string{"foobar-barbaz-Foo bar baz 4 quix-0cut-1ffc-bar-baz-320x240-2foo-baz.mp4"},
 		},
 	}
 	for _, tt := range tests {
