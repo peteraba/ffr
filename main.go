@@ -679,19 +679,20 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, forceOve
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	r, err := regexp.Compile(regularExpression)
+	r, err := regexp.Compile("-(" + regularExpression + ")")
 	if err != nil {
 		return fmt.Errorf("regexp failed, err: %w", err)
 	}
-	matched := r.FindString(basePath)
+	matched := r.FindAllStringSubmatch(basePath, -1)
 
 	// fallback in case of no match is to insert text at the end of the string
 	newPath := basePath + "-" + insertText + ext
-	if matched != "" {
-		newPath = strings.Replace(basePath, matched, insertText+"-"+matched, 1) + ext
+	if len(matched) > 0 {
+		insertText += "-" + matched[len(matched)-1][1]
+		newPath = strings.Replace(basePath, matched[len(matched)-1][1], insertText, 1) + ext
 	}
 
-	l.Printf(`"%s" -> "%s", found: "%s", new: "%s"`, filePath, newPath, matched, insertText+matched)
+	l.Printf(`"%s" -> "%s", found: "%s", new: "%s"`, filePath, newPath, matched, insertText)
 
 	if dryRun {
 		return nil

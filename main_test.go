@@ -692,6 +692,17 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			},
 			want: []string{"foo-320x240-BAR.mp4"},
 		},
+		{
+			name: "default with regular expression",
+			need: []string{"els4ai.mp4"},
+			args: args{
+				filePath:          "els4ai.mp4",
+				regularExpression: "",
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			want: []string{"els4ai-320x240.mp4"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
