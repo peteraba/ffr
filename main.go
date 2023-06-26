@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bitfield/script"
 	cli "github.com/urfave/cli/v2"
@@ -145,15 +147,22 @@ func process(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.Fi
 	}
 
 	fileInfoList := getFileInfoList(args[argCount:], c.Bool(backwardsFlag))
+	for _, fi := range fileInfoList {
+		l.Printf("file found: %s", fi.Name())
+	}
 
 	args = args[:argCount]
 
+	t0 := time.Now()
 	for _, fi := range fileInfoList {
+		t1 := time.Now()
 		err := fn(c, args, fi, dryRun)
 		if err != nil {
 			l.Println(err)
 		}
+		l.Printf("done in %s.", time.Since(t1).String())
 	}
+	l.Printf("all done in %s.", time.Since(t0).String())
 
 	return nil
 }
@@ -212,6 +221,116 @@ func (a App) keyFrames(c *cli.Context, args []string, fi os.FileInfo, dryRun boo
 	return keyFrames(fi)
 }
 
+const (
+	videoCodecKey   = "-c:v"
+	audioCodecKey   = "-c:a"
+	crfKey          = "-crf"
+	presetKey       = "-preset"
+	audioQualityKey = "-q:a"
+	losslessKey     = "-lossless"
+)
+
+type ReEncoder struct {
+	lock     *sync.Mutex
+	params   map[string]string
+	order    []string
+	keys     []string
+	boolKeys []string
+}
+
+func NewReEncoder() *ReEncoder {
+	return &ReEncoder{
+		lock:     &sync.Mutex{},
+		params:   make(map[string]string),
+		keys:     []string{videoCodecKey, crfKey, losslessKey, presetKey},
+		boolKeys: []string{losslessKey},
+	}
+}
+
+func (r *ReEncoder) Set(key, value string) *ReEncoder {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	_, ok := r.params[key]
+	if ok {
+		r.params[key] = value
+
+		return r
+	}
+
+	r.params[key] = value
+	r.order = append(r.order, key)
+
+	return r
+}
+
+func (r *ReEncoder) Delete(key string) *ReEncoder {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	_, ok := r.params[key]
+	if !ok {
+		return r
+	}
+
+	delete(r.params, key)
+	for i, k := range r.order {
+		if k == key {
+			r.order = append(r.order[:i], r.order[i+1:]...)
+		}
+	}
+
+	return r
+}
+
+func (r *ReEncoder) String() string {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	params := []string{}
+	for _, key := range r.order {
+		params = append(params, key+" "+r.params[key])
+	}
+
+	return strings.Join(params, " ")
+}
+
+func (r *ReEncoder) GetPath() string {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	values := []string{}
+
+	for _, key := range r.keys {
+		if value, ok := r.params[key]; ok {
+			b := false
+			for _, bv := range r.boolKeys {
+				if bv == key {
+					b = true
+					break
+				}
+			}
+			if b {
+				values = append(values, strings.Trim(key, "-"))
+			} else {
+				values = append(values, value)
+			}
+		}
+	}
+
+	return strings.Join(values, "-")
+}
+
+func findPreset(preset string) (string, error) {
+	for _, p := range allowedPresets {
+		if p == preset {
+			return preset, nil
+		}
+	}
+
+	return "", fmt.Errorf("invalid preset. preset: %s", preset)
+}
+
 func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool) (string, error) {
 	filePath := fi.Name()
 
@@ -221,72 +340,88 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
+	extNew := "mp4"
+	params := NewReEncoder()
+	params.Set("-i", filePath).
+		Set(crfKey, fmt.Sprintf("%d", crf)).
+		Set(presetKey, preset)
+
 	switch codec {
 	case "libx265":
 		// https://trac.ffmpeg.org/wiki/Encode/H.265
 		if crf == 0 {
 			crf = 28
 		}
+
+		preset, err := findPreset(preset)
+		if err != nil {
+			return "", err
+		}
+
+		params.
+			Delete(crfKey).
+			Set(videoCodecKey, "libx265").
+			Set("-x265-params", "keyint=1").
+			Set(presetKey, preset).
+			Set(crfKey, fmt.Sprintf("%d", crf)).
+			Set(audioCodecKey, "aac").
+			Set(audioQualityKey, "100").
+			Set("-tag:v", "hvc1")
+
 		break
 	case "libx264":
 		// https://trac.ffmpeg.org/wiki/Encode/H.264
 		if crf == 0 {
 			crf = 23
 		}
+
+		preset, err := findPreset(preset)
+		if err != nil {
+			return "", err
+		}
+
+		params.
+			Delete(crfKey).
+			Set(videoCodecKey, "libx264").
+			Set("-x264-params", "keyint=1").
+			Set(presetKey, preset).
+			Set(crfKey, fmt.Sprintf("%d", crf)).
+			Set(audioCodecKey, "aac").
+			Set(audioQualityKey, "100")
+
 		break
 	case "vp9":
 		// https://trac.ffmpeg.org/wiki/Encode/VP9
+		extNew = "mkv"
+
+		params.
+			Delete(presetKey).
+			Delete(crfKey).
+			Set(videoCodecKey, "vp9").
+			Set("-g", "1").
+			Set(crfKey, fmt.Sprintf("%d", crf)).
+			Set("-b:v", "1").
+			Set(audioCodecKey, "aac")
+
 		if crf == 0 {
-			crf = 31
-		}
-	default:
-		return "", fmt.Errorf("unsupported codec")
-	}
-
-	found := false
-	for _, p := range allowedPresets {
-		if p == preset {
-			found = true
-			break
+			params.Set(losslessKey, "1").Delete("-crf")
 		}
 	}
-	if !found {
-		return "", fmt.Errorf("invalid preset. preset: %s", preset)
-	}
 
-	outputBasePath := fmt.Sprintf("%s-%s-%d-%s", basePath, codec, crf, preset)
+	outputPath := fmt.Sprintf("%s-%s.%s", basePath, params.GetPath(), extNew)
+	command := fmt.Sprintf(`ffmpeg %s "%s"`, params.String(), outputPath)
 
-	var command string
-	switch codec {
-	case "libx265":
-		// https://trac.ffmpeg.org/wiki/Encode/H.265
-		outputBasePath += ".mp4"
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx265 -x265-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 -tag:v hvc1 "%s"`, filePath, preset, crf, outputBasePath)
-		break
-	case "libx264":
-		// https://trac.ffmpeg.org/wiki/Encode/H.264
-		outputBasePath += ".mp4"
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v libx264 -x264-params keyint=1 -preset %s -crf %d -c:a aac -q:a 100 "%s"`, filePath, preset, crf, outputBasePath)
-		break
-	case "vp9":
-		outputBasePath += ".mkv"
-		// https://trac.ffmpeg.org/wiki/Encode/VP9
-		command = fmt.Sprintf(`ffmpeg -i "%s" -c:v vp9 -g 1 -crf %d -b:v 0 -c:a aac "%s"`, filePath, crf, outputBasePath)
-	default:
-		return "", fmt.Errorf("unsupported codec")
-	}
-
-	l.Printf("new path: %s", outputBasePath)
+	l.Printf("new path: %s", outputPath)
 	l.Printf("command: %s", command)
 
 	if dryRun {
-		return outputBasePath, nil
+		return outputPath, nil
 	}
 
 	output, err := exec(command)
 	l.Println(output)
 
-	return outputBasePath, err
+	return outputPath, err
 }
 
 func (a App) reEncode(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {

@@ -1168,7 +1168,7 @@ func Test_reEncode(t *testing.T) {
 				preset:   "slow",
 				dryRun:   false,
 			},
-			want: []string{"foo-vp9-63-slow.mkv"},
+			want: []string{"foo-vp9-63.mkv"},
 		},
 		{
 			name: "vp9 default crf",
@@ -1177,10 +1177,20 @@ func Test_reEncode(t *testing.T) {
 				filePath: "foo.mp4",
 				codec:    "vp9",
 				crf:      0,
-				preset:   "slow",
 				dryRun:   false,
 			},
-			want: []string{"foo-vp9-31-slow.mkv"},
+			want: []string{"foo-vp9-lossless.mkv"},
+		},
+		{
+			name: "vp9 default crf",
+			need: []string{"foo.mp4"},
+			args: args{
+				filePath: "foo.mp4",
+				codec:    "vp9",
+				crf:      0,
+				dryRun:   false,
+			},
+			want: []string{"foo-vp9-lossless.mkv"},
 		},
 	}
 	for _, tt := range tests {
