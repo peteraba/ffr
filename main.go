@@ -666,7 +666,7 @@ func (a App) addNumber(c *cli.Context, args []string, fi os.FileInfo, dryRun boo
 	return addNumber(fi, regularExpression, numberToAdd, regexpGroup, skipFinds, maxCount, forceOverwrite, dryRun)
 }
 
-func insertBefore(fi os.FileInfo, regularExpression, insertText string, forceOverwrite, dryRun bool) error {
+func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDashPrefix, forceOverwrite, dryRun bool) error {
 	filePath := fi.Name()
 
 	if regularExpression == "" {
@@ -679,7 +679,11 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, forceOve
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
-	r, err := regexp.Compile("-(" + regularExpression + ")")
+	regularExpression = "(" + regularExpression + ")"
+	if !skipDashPrefix {
+		regularExpression = "-" + regularExpression
+	}
+	r, err := regexp.Compile(regularExpression)
 	if err != nil {
 		return fmt.Errorf("regexp failed, err: %w", err)
 	}
@@ -703,11 +707,12 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, forceOve
 
 func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
+	skipDashPrefix := c.Bool(skipDashPrefixFlag)
 	insert := args[1]
 
 	forceOverwrite := c.Bool(forceFlag)
 
-	return insertBefore(fi, regularExpression, insert, forceOverwrite, dryRun)
+	return insertBefore(fi, regularExpression, insert, skipDashPrefix, forceOverwrite, dryRun)
 }
 
 var wellKnown = map[string]string{
@@ -750,7 +755,7 @@ func getDimensions(fi os.FileInfo) (string, error) {
 	return dimensions, nil
 }
 
-func insertDimensionsBefore(fi os.FileInfo, regularExpression string, forceOverwrite, dryRun bool) error {
+func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDashPrefix, forceOverwrite, dryRun bool) error {
 	dimensions, err := getDimensions(fi)
 	if err != nil {
 		return err
@@ -760,14 +765,15 @@ func insertDimensionsBefore(fi os.FileInfo, regularExpression string, forceOverw
 		dimensions = found
 	}
 
-	return insertBefore(fi, regularExpression, dimensions, forceOverwrite, dryRun)
+	return insertBefore(fi, regularExpression, dimensions, skipDashPrefix, forceOverwrite, dryRun)
 }
 
 func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
+	skipDashPrefix := c.Bool(skipDashPrefixFlag)
 	forceOverwrite := c.Bool(forceFlag)
 
-	return insertDimensionsBefore(fi, regularExpression, forceOverwrite, dryRun)
+	return insertDimensionsBefore(fi, regularExpression, skipDashPrefix, forceOverwrite, dryRun)
 }
 
 func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun bool) error {
@@ -1016,6 +1022,10 @@ const (
 	regexpGroupAlias = "rg"
 	regexpGroupUsage = "regexp group number to use"
 
+	skipDashPrefixFlag  = "skip-dash-prefix"
+	skipDashPrefixAlias = "sdp"
+	skipDashPrefixUsage = "if true, the regular expression will not be prefixed with a dash"
+
 	verboseFlag  = "verbose"
 	verboseAlias = "v"
 	verboseUsage = "print commands before executing them"
@@ -1078,6 +1088,12 @@ func main() {
 			Aliases: []string{regexpAlias},
 			Value:   "",
 			Usage:   regexpUsage,
+		},
+		skipDashPrefixFlag: &cli.BoolFlag{
+			Name:    skipDashPrefixFlag,
+			Aliases: []string{skipDashPrefixAlias},
+			Value:   true,
+			Usage:   skipDashPrefixUsage,
 		},
 		deleteTextFlag: &cli.StringFlag{
 			Name:    deleteTextFlag,
@@ -1180,6 +1196,7 @@ func main() {
 					allFlags[forceFlag],
 					allFlags[regexpFlag],
 					allFlags[verboseFlag],
+					allFlags[skipDashPrefixFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.insertBefore)
@@ -1196,6 +1213,7 @@ func main() {
 					allFlags[forceFlag],
 					allFlags[regexpFlag],
 					allFlags[verboseFlag],
+					allFlags[skipDashPrefixFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.insertDimensionsBefore)

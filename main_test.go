@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -560,6 +561,7 @@ func Test_insertBefore(t *testing.T) {
 	type args struct {
 		filePath          string
 		regularExpression string
+		skipDashPrefix    bool
 		insertText        string
 		forceOverwrite    bool
 		dryRun            bool
@@ -576,6 +578,7 @@ func Test_insertBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-1bar.txt",
 				regularExpression: "",
+				skipDashPrefix:    false,
 				insertText:        "FOO",
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -588,6 +591,7 @@ func Test_insertBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-1bar.txt",
 				regularExpression: "foo",
+				skipDashPrefix:    true,
 				insertText:        "FOO",
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -600,6 +604,7 @@ func Test_insertBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-barzan.txt",
 				regularExpression: "bar[a-z]+",
+				skipDashPrefix:    false,
 				insertText:        "FOO",
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -612,6 +617,7 @@ func Test_insertBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo.txt",
 				regularExpression: "",
+				skipDashPrefix:    false,
 				insertText:        "FOO",
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -634,7 +640,7 @@ func Test_insertBefore(t *testing.T) {
 			// execute
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
-			result := insertBefore(fi, tt.args.regularExpression, tt.args.insertText, tt.args.forceOverwrite, tt.args.dryRun)
+			result := insertBefore(fi, tt.args.regularExpression, tt.args.insertText, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
@@ -672,7 +678,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		// execute
 		fi, err := os.Stat(vidPath)
 		require.NoError(t, err)
-		result := insertDimensionsBefore(fi, "", forceOverwrite, dryRun)
+		result := insertDimensionsBefore(fi, "", true, forceOverwrite, dryRun)
 
 		// assert
 		assert.NoError(t, result)
@@ -688,6 +694,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 	type args struct {
 		filePath          string
 		regularExpression string
+		skipDashPrefix    bool
 		insertText        string
 		forceOverwrite    bool
 		dryRun            bool
@@ -704,6 +711,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo.mp4",
 				regularExpression: "",
+				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -715,6 +723,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-1bar.mp4",
 				regularExpression: "",
+				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -726,6 +735,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-BAR.mp4",
 				regularExpression: "BAR",
+				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -737,6 +747,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo4bar.mp4",
 				regularExpression: "",
+				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -748,6 +759,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foobar-barbaz-Foo bar baz 4 quix-0cut-1ffc-bar-baz-2foo-baz.mp4",
 				regularExpression: "",
+				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -769,7 +781,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			// execute
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
-			result := insertDimensionsBefore(fi, tt.args.regularExpression, tt.args.forceOverwrite, tt.args.dryRun)
+			result := insertDimensionsBefore(fi, tt.args.regularExpression, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
