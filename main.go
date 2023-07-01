@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bitfield/script"
+	"github.com/cheynewallace/tabby"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -21,7 +22,51 @@ const (
 )
 
 const (
-	defaultCodec  = "libx265"
+	codecH264 = "h264"
+	codecH265 = "hevc"
+)
+
+const (
+	encoderH264 = "libx264"
+	encoderH265 = "libx265"
+	encoderVP9  = "vp9"
+)
+
+const (
+	eightKPreset  = "8k"
+	fourKPreset   = "4k"
+	qHDPreset     = "qhd"
+	twoKPreset    = "2k"
+	fullHDPreset  = "fullhd"
+	hdPreset      = "hd"
+	sdPreset      = "sd"
+	eightKPreset2 = "4320p"
+	fourKPreset2  = "2160p"
+	qHDPreset2    = "1440p"
+	fullHDPreset2 = "1080p"
+	hdPreset2     = "720p"
+	sdPreset2     = "480p"
+)
+
+const (
+	eightKWidth  = 7680
+	eightKHeight = 4320
+	fourKWidth   = 3840
+	fourKHeight  = 2160
+	qHDWidth     = 2560
+	qHDHeight    = 1440
+	twoKWidth    = 2048
+	twoKHeight   = 1080
+	fullHDWidth  = 1920
+	fullHDHeight = 1080
+	hdWidth      = 1280
+	hdHeight     = 720
+	sdWidth      = 640
+	sdHeight     = 480
+)
+
+const (
+	defaultCodec  = encoderH265
 	defaultPreset = "ultrafast"
 )
 
@@ -111,14 +156,14 @@ func getFileInfoList(filePaths []string, backwardsFlag bool) []os.FileInfo {
 	for _, filePath := range filePaths {
 		fi, err := os.Stat(filePath)
 		if err != nil {
-			log.Fatalf("argument is not a file: %s, err: %s", filePath, err)
+			log.Fatalf("argument is not a file: %q, err: %s", filePath, err)
 		}
 
 		if fi.IsDir() {
-			log.Fatalf("file is a directory: %s", filePath)
+			log.Fatalf("file is a directory: %q", filePath)
 		}
 
-		l.Printf("file is okay: %s", filePath)
+		l.Printf("file is okay: %q", filePath)
 
 		fileInfoList = append(fileInfoList, fi)
 	}
@@ -148,7 +193,7 @@ func process(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.Fi
 
 	fileInfoList := getFileInfoList(args[argCount:], c.Bool(backwardsFlag))
 	for _, fi := range fileInfoList {
-		l.Printf("file found: %s", fi.Name())
+		l.Printf("file found: %q", fi.Name())
 	}
 
 	args = args[:argCount]
@@ -160,9 +205,38 @@ func process(c *cli.Context, argCount int, fn func(*cli.Context, []string, os.Fi
 		if err != nil {
 			l.Println(err)
 		}
-		l.Printf("done in %s.", time.Since(t1).String())
+		log.Printf("done in %s.", time.Since(t1).String())
 	}
-	l.Printf("all done in %s.", time.Since(t0).String())
+	log.Printf("all done in %s.", time.Since(t0).String())
+
+	return nil
+}
+
+func processAll(c *cli.Context, argCount int, fn func(*cli.Context, []string, []os.FileInfo, bool) error) error {
+	args := c.Args().Slice()
+	dryRun := c.Bool(dryRunFlag)
+
+	l = logger{
+		silent: !(c.Bool(verboseFlag) || c.Bool(dryRunFlag)),
+	}
+
+	if argCount > len(args) {
+		return errors.New("not enough arguments")
+	}
+
+	fileInfoList := getFileInfoList(args[argCount:], c.Bool(backwardsFlag))
+	for _, fi := range fileInfoList {
+		l.Printf("file found: %q", fi.Name())
+	}
+
+	args = args[:argCount]
+
+	t0 := time.Now()
+	err := fn(c, args, fileInfoList, dryRun)
+	if err != nil {
+		l.Println(err)
+	}
+	log.Printf("all done in %s.", time.Since(t0).String())
 
 	return nil
 }
@@ -179,17 +253,15 @@ func exec(command string) (string, error) {
 
 type App struct{}
 
-func keyFrames(fi os.FileInfo) error {
+func findKeyFrames(fi os.FileInfo) ([]string, error) {
 	command := fmt.Sprintf(`ffprobe -loglevel error -select_streams v:0 -show_entries packet=pts_time,flags -of csv=print_section=0 "%s"`, fi.Name())
-
-	l.Println(command)
 
 	res, err := script.Exec(command).Match(",K__").FilterLine(func(line string) string {
 		return strings.Split(line, ",")[0]
 	}).Slice()
 
 	if err != nil {
-		return fmt.Errorf("unable to retrieve keyframes. err: %w", err)
+		return nil, fmt.Errorf("unable to retrieve keyframes. err: %w", err)
 	}
 
 	maxCount := 4
@@ -205,10 +277,19 @@ func keyFrames(fi os.FileInfo) error {
 
 		n, err := strconv.ParseFloat(line, 32)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		numbers = append(numbers, fmt.Sprintf("%.1f", n))
+	}
+
+	return numbers, nil
+}
+
+func keyFrames(fi os.FileInfo) error {
+	numbers, err := findKeyFrames(fi)
+	if err != nil {
+		return err
 	}
 
 	l.Printf("file: %s", fi.Name())
@@ -222,12 +303,17 @@ func (a App) keyFrames(c *cli.Context, args []string, fi os.FileInfo, dryRun boo
 }
 
 const (
-	videoCodecKey   = "-c:v"
-	audioCodecKey   = "-c:a"
-	crfKey          = "-crf"
-	presetKey       = "-preset"
-	audioQualityKey = "-q:a"
-	losslessKey     = "-lossless"
+	videoCodecKey    = "-c:v"
+	audioCodecKey    = "-c:a"
+	crfKey           = "-crf"
+	bitRateKey       = "-b:v"
+	maxRateKey       = "-maxrate"
+	bufsizeKey       = "-bufsize"
+	presetKey        = "-preset"
+	losslessKey      = "-lossless"
+	hwaccelKey       = "-hwaccel"
+	hwaccelDeviceKey = "-hwaccel_device"
+	inputKey         = "-i"
 )
 
 type ReEncoder struct {
@@ -242,7 +328,7 @@ func NewReEncoder() *ReEncoder {
 	return &ReEncoder{
 		lock:     &sync.Mutex{},
 		params:   make(map[string]string),
-		keys:     []string{videoCodecKey, crfKey, losslessKey, presetKey},
+		keys:     []string{videoCodecKey, hwaccelKey, crfKey, losslessKey, presetKey, bitRateKey},
 		boolKeys: []string{losslessKey},
 	}
 }
@@ -289,7 +375,7 @@ func (r *ReEncoder) String() string {
 
 	params := []string{}
 	for _, key := range r.order {
-		params = append(params, key+" "+r.params[key])
+		params = append(params, fmt.Sprintf("%s %q", key, r.params[key]))
 	}
 
 	return strings.Join(params, " ")
@@ -331,7 +417,38 @@ func findPreset(preset string) (string, error) {
 	return "", fmt.Errorf("invalid preset. preset: %s", preset)
 }
 
-func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool) (string, error) {
+func getNewBitRates(fi os.FileInfo, encoder string) (string, string, error) {
+	oldCodec, err := getCodec(fi)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to get codec. err: %w", err)
+	}
+
+	rawBitRate, err := getBitRate(fi)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to get bitrate. err: %w", err)
+	}
+
+	if rawBitRate == 0 {
+		vt := info(fi, true)
+
+		rawBitRate = vt.width * vt.height / 10 * int64(vt.frameRate)
+	}
+
+	rbr := intToString(rawBitRate, "", "")
+	l.Printf("file: %s, old codec: %s, encoder: %s, old bit rate: %d, rbr human: %s", fi.Name(), oldCodec, encoder, rawBitRate, rbr)
+
+	if encoder == encoderH265 && oldCodec != codecH265 {
+		rawBitRate = rawBitRate * 6 / 10
+	}
+
+	rbr = intToString(rawBitRate, "", "")
+	rbr2 := intToString(rawBitRate*2, "", "")
+	l.Printf("file: %s, old codec: %s, encoder: %s, new bit rate: %d, rbr human: %s", fi.Name(), oldCodec, encoder, rawBitRate, rbr)
+
+	return rbr, rbr2, nil
+}
+
+func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDevice string, dryRun bool) (string, error) {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -342,12 +459,17 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 
 	extNew := "mp4"
 	params := NewReEncoder()
-	params.Set("-i", filePath).
+	params.
+		Set(hwaccelKey, "auto").
+		Set(hwaccelDeviceKey, hwaccelDevice).
+		Set(inputKey, filePath).
 		Set(crfKey, fmt.Sprintf("%d", crf)).
 		Set(presetKey, preset)
 
 	switch codec {
-	case "libx265":
+	case encoderH265:
+		const x265Params = "-x265-params"
+
 		// https://trac.ffmpeg.org/wiki/Encode/H.265
 		if crf == 0 {
 			crf = 28
@@ -360,16 +482,30 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 
 		params.
 			Delete(crfKey).
-			Set(videoCodecKey, "libx265").
-			Set("-x265-params", "keyint=1").
+			Set(videoCodecKey, encoderH265).
+			Set(x265Params, "keyint=1").
 			Set(presetKey, preset).
 			Set(crfKey, fmt.Sprintf("%d", crf)).
-			Set(audioCodecKey, "aac").
-			Set(audioQualityKey, "100").
+			Set(audioCodecKey, "copy").
 			Set("-tag:v", "hvc1")
 
+		switch hwaccel {
+		case "qsv":
+			params.
+				Delete(presetKey).
+				Delete(crfKey).
+				// Set(hwaccelKey, "hevc_qsv").
+				Set(videoCodecKey, "hevc_qsv")
+		default:
+			params.
+				Delete(hwaccelKey).
+				Delete(hwaccelDeviceKey)
+		}
+
 		break
-	case "libx264":
+	case encoderH264:
+		const x264Params = "-x264-params"
+
 		// https://trac.ffmpeg.org/wiki/Encode/H.264
 		if crf == 0 {
 			crf = 23
@@ -382,30 +518,70 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset string, dryRun bool)
 
 		params.
 			Delete(crfKey).
-			Set(videoCodecKey, "libx264").
-			Set("-x264-params", "keyint=1").
+			Set(videoCodecKey, encoderH264).
+			Set(x264Params, "keyint=1").
 			Set(presetKey, preset).
 			Set(crfKey, fmt.Sprintf("%d", crf)).
-			Set(audioCodecKey, "aac").
-			Set(audioQualityKey, "100")
+			Set(audioCodecKey, "copy")
+
+		switch hwaccel {
+		case "qsv":
+			params.
+				Delete(presetKey).
+				Delete(crfKey).
+				// Set(hwaccelKey, "hevc_qsv").
+				Set(videoCodecKey, "h264_qsv")
+		default:
+			params.
+				Delete(hwaccelKey).
+				Delete(hwaccelDeviceKey)
+		}
 
 		break
-	case "vp9":
+	case encoderVP9:
+		const vp9KeyFrameKey = "-g"
+
 		// https://trac.ffmpeg.org/wiki/Encode/VP9
 		extNew = "mkv"
 
 		params.
 			Delete(presetKey).
 			Delete(crfKey).
-			Set(videoCodecKey, "vp9").
-			Set("-g", "1").
+			Set(videoCodecKey, encoderVP9).
+			Set(vp9KeyFrameKey, "1").
 			Set(crfKey, fmt.Sprintf("%d", crf)).
-			Set("-b:v", "1").
-			Set(audioCodecKey, "aac")
+			Set(audioCodecKey, "copy")
 
 		if crf == 0 {
-			params.Set(losslessKey, "1").Delete("-crf")
+			params.
+				Delete(crfKey).
+				Set(losslessKey, "1")
 		}
+
+		switch hwaccel {
+		case "qsv":
+			params.
+				Delete(presetKey).
+				Delete(crfKey).
+				// Set(hwaccelKey, "hevc_qsv").
+				Set(videoCodecKey, "vp9_qsv")
+		default:
+			params.
+				Delete(hwaccelKey).
+				Delete(hwaccelDeviceKey)
+		}
+	}
+
+	if hwaccel != "" {
+		avgBitRate, maxBitRate, err := getNewBitRates(fi, codec)
+		if err != nil {
+			return "", fmt.Errorf("unable to get bit rates. err: %w", err)
+		}
+
+		params.
+			Set(bitRateKey, avgBitRate).
+			Set(maxRateKey, maxBitRate).
+			Set(bufsizeKey, maxBitRate)
 	}
 
 	outputPath := fmt.Sprintf("%s-%s.%s", basePath, params.GetPath(), extNew)
@@ -428,8 +604,10 @@ func (a App) reEncode(c *cli.Context, args []string, fi os.FileInfo, dryRun bool
 	codec := c.String(codecFlag)
 	crf := c.Int(crfFlag)
 	preset := c.String(presetFlag)
+	hwaccel := c.String(hwaccelFlag)
+	hwaccelDevice := c.String(hwaccelDeviceFlag)
 
-	_, err := reEncode(fi, codec, crf, preset, dryRun)
+	_, err := reEncode(fi, codec, crf, preset, hwaccel, hwaccelDevice, dryRun)
 
 	return err
 }
@@ -568,7 +746,7 @@ func mergeParts(fi os.FileInfo, regularExpression, deleteText string, forceOverw
 		}
 	}
 
-	r, err := regexp.Compile(`-(\d+)(` + regularExpression + `(-[a-z]+\d*)*)`)
+	r, err := regexp.Compile(`-(\d{1,2})(` + regularExpression + `(-[a-z]+\d*)*)`)
 	if err != nil {
 		return err
 	}
@@ -866,7 +1044,6 @@ func getDimensions(fi os.FileInfo) (string, error) {
 	fp := strings.Replace(fi.Name(), " ", "\\ ", -1)
 	fp = strings.Replace(fp, "'", "\\'", -1)
 	cmd := fmt.Sprintf(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 %s`, fp)
-	l.Printf(cmd)
 
 	dimensions, err := exec(cmd)
 	if err != nil {
@@ -878,10 +1055,8 @@ func getDimensions(fi os.FileInfo) (string, error) {
 	}
 
 	dimensions = strings.TrimSpace(dimensions)
-	l.Printf("dimensions found. file: '%s', dimensions: '%s'", fp, dimensions)
 
 	dimensions = dimensionsRegexp.FindString(dimensions)
-	l.Printf("dimensions found in multiline output. file: '%s', dimensions: '%s'", fp, dimensions)
 
 	if dimensions == "" {
 		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
@@ -911,11 +1086,60 @@ func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInf
 	return insertDimensionsBefore(fi, regularExpression, skipDashPrefix, forceOverwrite, dryRun)
 }
 
-func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun bool) error {
+func parseDimensions(dimensions string) (int, int, error) {
+	d := strings.Split(dimensions, "x")
+	if len(d) != 2 {
+		return 0, 0, fmt.Errorf("wrong old dimensions: %s", dimensions)
+	}
+
+	widthOrigin, err := strconv.Atoi(d[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("wrong old dimensions: %s", dimensions)
+	}
+
+	heightOrigin, err := strconv.Atoi(d[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("wrong old dimensions: %s", dimensions)
+	}
+
+	return widthOrigin, heightOrigin, nil
+}
+
+func crop(fi os.FileInfo, width, height int, x, y, dimensionPreset string, forceOverwrite, dryRun bool) error {
 	basePath := filepath.Base(fi.Name())
 	ext := filepath.Ext(fi.Name())
 	if ext != "" {
 		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	switch dimensionPreset {
+	case eightKPreset, eightKPreset2:
+		width = eightKWidth
+		height = eightKHeight
+	case fourKPreset, fourKPreset2:
+		width = fourKWidth
+		height = fourKHeight
+	case qHDPreset, qHDPreset2:
+		width = qHDWidth
+		height = qHDHeight
+	case twoKPreset:
+		width = twoKWidth
+		height = twoKHeight
+	case fullHDPreset, fullHDPreset2:
+		width = fullHDWidth
+		height = fullHDHeight
+	case hdPreset, hdPreset2:
+		width = hdWidth
+		height = hdHeight
+	case sdPreset, sdPreset2:
+		width = sdWidth
+		height = sdHeight
+	}
+
+	l.Printf("preset: %s, width: %d, height: %d", dimensionPreset, width, height)
+
+	if width == 0 || height == 0 {
+		return fmt.Errorf("wrong dimensions. width: %d, height: %d", width, height)
 	}
 
 	dimensions, err := getDimensions(fi)
@@ -923,20 +1147,12 @@ func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun
 		return fmt.Errorf("failed to retrieve video dimensions. err: %w", err)
 	}
 
-	d := strings.Split(dimensions, "x")
-	if len(d) != 2 {
-		return fmt.Errorf("wrong old dimensions: %s", dimensions)
+	widthOrigin, heightOrigin, err := parseDimensions(dimensions)
+	if err != nil {
+		return fmt.Errorf("failed to parse video dimensions. err: %w", err)
 	}
 
-	widthOrigin, err := strconv.Atoi(d[0])
-	if err != nil {
-		return fmt.Errorf("wrong old dimensions: %s", dimensions)
-	}
-
-	heightOrigin, err := strconv.Atoi(d[1])
-	if err != nil {
-		return fmt.Errorf("wrong old dimensions: %s", dimensions)
-	}
+	l.Printf("origin width: %d, origin height: %d", width, height)
 
 	if widthOrigin < width || heightOrigin < height {
 		return fmt.Errorf("wrong dimensions. new dimensions: %dx%d, old dimensions: %s", width, height, dimensions)
@@ -945,7 +1161,7 @@ func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun
 	var xPos int
 	switch x {
 	case "left":
-	case "center":
+	case "center", "":
 		xPos = (widthOrigin - width) / 2
 	case "right":
 		xPos = widthOrigin - width
@@ -959,7 +1175,7 @@ func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun
 	var yPos int
 	switch y {
 	case "top":
-	case "center":
+	case "center", "":
 		yPos = (heightOrigin - height) / 2
 	case "bottom":
 		yPos = heightOrigin - height
@@ -970,8 +1186,10 @@ func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun
 		}
 	}
 
+	l.Printf("x: %d, y: %d", xPos, yPos)
+
 	if widthOrigin < width+yPos || heightOrigin < height+xPos {
-		return fmt.Errorf("wrong instructions. new dimensions: %dx%d, pox x: %d, pos y: %d, old dimensions: %s", width, height, xPos, yPos, dimensions)
+		return fmt.Errorf("wrong instructions. new dimensions: %dx%d, pos x: %d, pos y: %d, old dimensions: %s", width, height, xPos, yPos, dimensions)
 	}
 
 	newPath := fmt.Sprintf("%s-%dx%d%s", basePath, width, height, ext)
@@ -1003,18 +1221,219 @@ func crop(fi os.FileInfo, width, height int, x, y string, forceOverwrite, dryRun
 func (a App) crop(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	forceOverwrite := c.Bool(forceFlag)
 
-	width, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("wrong instructions, width: %s", args[0])
-	}
-	height, err := strconv.Atoi(args[1])
-	if err != nil {
-		return fmt.Errorf("wrong instructions, height: %s", args[1])
-	}
-	x := args[2]
-	y := args[3]
+	width := c.Int(widthFlag)
+	height := c.Int(heightFlag)
+	x := c.String(xFlag)
+	y := c.String(yFlag)
 
-	return crop(fi, width, height, x, y, forceOverwrite, dryRun)
+	dimensionPreset := c.String(dimensionPresetFlag)
+
+	return crop(fi, width, height, x, y, dimensionPreset, forceOverwrite, dryRun)
+}
+
+type videoType struct {
+	name      string
+	size      int64
+	bitRate   int64
+	length    float64
+	frameRate float64
+	width     int64
+	height    int64
+	codec     string
+	indexes   []string
+}
+
+type videoTypes []videoType
+
+func (vs videoTypes) Print(skipKeyFrames bool, maxNameLength int) {
+	t := tabby.New()
+	t.AddHeader("FILE", "SIZE", "BITRATE", "LENGTH", "FRAMERATE", "WIDTH", "HEIGHT", "CODEC", "INDEXES")
+
+	for _, v := range vs {
+		cols := []interface{}{}
+
+		name := v.name
+		if len(v.name) > maxNameLength {
+			name = v.name[:maxNameLength-12] + "..." + v.name[len(v.name)-9:]
+		}
+
+		indexes := "SKIPPED"
+		if !skipKeyFrames {
+			indexes = strings.Join(v.indexes, " ")
+		}
+
+		cols = append(cols, name)
+		cols = append(cols, intToString(v.size, " ", "B"))
+		cols = append(cols, intToString(v.bitRate, " ", "bit"))
+		cols = append(cols, float64(int(v.length*10))/10)
+		cols = append(cols, float64(int(v.frameRate*10))/10)
+		cols = append(cols, v.width)
+		cols = append(cols, v.height)
+		cols = append(cols, v.codec)
+		cols = append(cols, indexes)
+
+		t.AddLine(cols...)
+	}
+
+	t.Print()
+}
+
+func intToString(n int64, s, s2 string) string {
+	if n > 1000*1000*1000*1000 {
+		return fmt.Sprintf("%.1f%sT%s", float64(n)/1000/1000/1000/1000, s, s2)
+	} else if n > 1000*1000*1000 {
+		return fmt.Sprintf("%.1f%sG%s", float64(n)/1000/1000/1000, s, s2)
+	} else if n > 1000*1000 {
+		return fmt.Sprintf("%.1f%sM%s", float64(n)/1000/1000, s, s2)
+	} else if n > 1000 {
+		return fmt.Sprintf("%.1f%sK%s", float64(n)/1000, s, s2)
+	}
+
+	return fmt.Sprintf("%d%s%s", n, s, s2)
+}
+
+func getBitRate(fi os.FileInfo) (int64, error) {
+	bitrateRaw, err := exec(fmt.Sprintf("ffprobe -v quiet -select_streams v:0 -show_entries stream=bit_rate -of default=noprint_wrappers=1 %q", fi.Name()))
+	if err != nil {
+		return 0, fmt.Errorf("failed to probe file. file: '%s', err: %w", fi.Name(), err)
+	}
+
+	if len(bitrateRaw) < 10 {
+		return 0, fmt.Errorf("invalid probe result. file: '%s', bitrate found: %s", fi.Name(), bitrateRaw)
+	}
+
+	bitrateRaw = strings.TrimSpace(bitrateRaw[9:])
+	if bitrateRaw == "N/A" {
+		return 0, nil
+	}
+
+	bitRate, err := strconv.ParseInt(bitrateRaw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse bit rate. file: '%s', err: %w", fi.Name(), err)
+	}
+
+	return bitRate, nil
+}
+
+func getCodec(fi os.FileInfo) (string, error) {
+	codec, err := exec(fmt.Sprintf("ffprobe -v quiet -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 %q", fi.Name()))
+	if err != nil {
+		return "", fmt.Errorf("failed to probe file for codec. file: '%s', err: %w", fi.Name(), err)
+	}
+
+	parts := strings.Split(strings.TrimSpace(codec), " ")
+	if len(parts) > 1 {
+		return "", fmt.Errorf("suspicious codec found. file: '%s', codec: %s", fi.Name(), codec)
+	}
+
+	return parts[0], nil
+}
+
+func getLength(fi os.FileInfo) (float64, error) {
+	lengthRaw, err := exec(fmt.Sprintf("ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 %q", fi.Name()))
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to probe file for length. file: '%s', err: %w", fi.Name(), err)
+	}
+
+	l, err := strconv.ParseFloat(strings.TrimSpace(lengthRaw), 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to parse length. file: '%s', err: %w", fi.Name(), err)
+	}
+
+	return l, nil
+}
+
+func getFrameRate(fi os.FileInfo) (float64, error) {
+	frameRateRaw, err := exec(fmt.Sprintf("ffprobe -v quiet -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate %q", fi.Name()))
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to probe file for frame rate. file: %q, err: %w", fi.Name(), err)
+	}
+
+	parts := strings.Split(strings.TrimSpace(frameRateRaw), "/")
+	p0, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to parse frame rate. file: %q, frame rate: %s, err: %w", fi.Name(), frameRateRaw, err)
+	}
+	p1, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to parse frame rate. file: %q, frame rate: %s, err: %w", fi.Name(), frameRateRaw, err)
+	}
+
+	return p0 / p1, nil
+}
+
+func info(fi os.FileInfo, skipKeyFrames bool) videoType {
+	bitRate, err := getBitRate(fi)
+	if err != nil {
+		l.Printf("failed to retrieve video bitrate. err: %q", err)
+	}
+
+	length, err := getLength(fi)
+	if err != nil {
+		l.Printf("failed to retrieve video length. err: %q", err)
+	}
+
+	frameRate, err := getFrameRate(fi)
+	if err != nil {
+		l.Printf("failed to retrieve video frame rate. err: %q", err)
+	}
+
+	dimensions, err := getDimensions(fi)
+	if err != nil {
+		l.Printf("failed to retrieve video dimensions. err: %q", err)
+	}
+
+	width, height, err := parseDimensions(dimensions)
+	if err != nil {
+		l.Printf("failed to parse video dimensions. err: %q", err)
+	}
+
+	codec, err := getCodec(fi)
+	if err != nil {
+		l.Printf("failed to retrieve video codec. err: %q", err)
+	}
+
+	var indexes []string
+	if !skipKeyFrames {
+		indexes, err = findKeyFrames(fi)
+		if err != nil {
+			l.Printf("failed to find key frames. err: %q", err)
+		}
+	}
+
+	return videoType{
+		name:      fi.Name(),
+		size:      fi.Size(),
+		bitRate:   bitRate,
+		length:    length,
+		frameRate: frameRate,
+		width:     int64(width),
+		height:    int64(height),
+		codec:     codec,
+		indexes:   indexes,
+	}
+}
+
+func infoAll(fileList []os.FileInfo, skipKeyFrames bool, maxNameLength int) error {
+	v := videoTypes{}
+	for _, fi := range fileList {
+		if fi.IsDir() {
+			continue
+		}
+
+		v = append(v, info(fi, skipKeyFrames))
+	}
+
+	v.Print(skipKeyFrames, maxNameLength)
+
+	return nil
+}
+
+func (a App) infoAll(c *cli.Context, args []string, fileList []os.FileInfo, dryRun bool) error {
+	skipKeyFrames := c.Bool(skipKeyframesFlag)
+	maxNameLength := c.Int(maxNameLengthFlag)
+
+	return infoAll(fileList, skipKeyFrames, maxNameLength)
 }
 
 // commands
@@ -1099,7 +1518,12 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`
 	cropCommand   = "crop"
 	cropAliases   = "c"
 	cropUsage     = "crop video"
-	cropArgsUsage = "[width] [height] [left|center|right|px from left] [top|center|bottom|px from top] [files...]"
+	cropArgsUsage = "[left|center|right|px from left] [top|center|bottom|px from top] [files...]"
+
+	infoCommand   = "info"
+	infoAliases   = "i"
+	infoUsage     = "display info about the video(s). (The backwards flag is ignored.)"
+	infoArgsUsage = "[files...]"
 )
 
 // flags
@@ -1120,11 +1544,15 @@ const (
 	codecUsage = "codec to use for encoding [libx264, libx265, vp9]"
 
 	crfFlag  = "crf"
-	crfUsage = "crf to use for encoding [https://slhck.info/video/2017/02/24/crf-guide.html]"
+	crfUsage = "crf to use for encoding (https://slhck.info/video/2017/02/24/crf-guide.html)"
 
 	forceFlag  = "force-overwrite"
 	forceAlias = "f"
 	forceUsage = "force overwriting existing files"
+
+	dimensionPresetFlag  = "dimension-preset"
+	dimensionPresetAlias = "dp"
+	dimensionPresetUsage = "preset to use for video dimensions"
 
 	fromBackFlag  = "from-back"
 	fromBackAlias = "fb"
@@ -1140,6 +1568,26 @@ const (
 
 	presetFlag  = "preset"
 	presetUsage = "preset to use for encoding [%s] (x264, x265 only)"
+
+	widthFlag  = "width"
+	widthUsage = "width to use for cropping video"
+
+	heightFlag  = "height"
+	heightUsage = "height to use for cropping video"
+
+	xFlag  = "x"
+	xUsage = "x position to use for cropping video (number, left, center, right)"
+
+	yFlag  = "y"
+	yUsage = "y position to use for cropping video (number, top, center, bottom)"
+
+	hwaccelFlag  = "hwaccel"
+	hwaccelAlias = "hw"
+	hwaccelUsage = "hardware acceleration to use for encoding [qsv]"
+
+	hwaccelDeviceFlag  = "hwaccel_device"
+	hwaccelDeviceAlias = "hwd"
+	hwaccelDeviceUsage = "hardware acceleration to use for encoding [/dev/dri/renderD128]"
 
 	skipFindsFlag  = "skip-finds"
 	skipFindsAlias = "s"
@@ -1164,12 +1612,21 @@ const (
 	verboseFlag  = "verbose"
 	verboseAlias = "v"
 	verboseUsage = "print commands before executing them"
+
+	skipKeyframesFlag  = "skip-keyframes"
+	skipKeyframesAlias = "sk"
+	skipKeyframesUsage = "if true, keyframes will not be included in the result"
+
+	maxNameLengthFlag    = "maximum-name-length"
+	maxNameLengthAlias   = "mnl"
+	maxNameLengthUsage   = "maximum length of a file name"
+	maxNameLengthDefault = 50
 )
 
 func main() {
 	a := App{}
 
-	allFlags := map[string]cli.Flag{
+	globalFlags := map[string]cli.Flag{
 		backwardsFlag: &cli.BoolFlag{
 			Name:    backwardsFlag,
 			Aliases: []string{backwardsAlias},
@@ -1182,18 +1639,21 @@ func main() {
 			Value:   false,
 			Usage:   dryRunUsage,
 		},
-		verboseFlag: &cli.BoolFlag{
-			Name:    verboseFlag,
-			Aliases: []string{verboseAlias},
-			Value:   false,
-			Usage:   verboseUsage,
-		},
 		forceFlag: &cli.BoolFlag{
 			Name:    forceFlag,
 			Aliases: []string{forceAlias},
 			Value:   false,
 			Usage:   forceUsage,
 		},
+		verboseFlag: &cli.BoolFlag{
+			Name:    verboseFlag,
+			Aliases: []string{verboseAlias},
+			Value:   false,
+			Usage:   verboseUsage,
+		},
+	}
+
+	commandFlags := map[string]cli.Flag{
 		codecFlag: &cli.StringFlag{
 			Name:  codecFlag,
 			Usage: codecUsage,
@@ -1207,6 +1667,16 @@ func main() {
 		crfFlag: &cli.IntFlag{
 			Name:  crfFlag,
 			Usage: crfUsage,
+		},
+		hwaccelFlag: &cli.StringFlag{
+			Name:    hwaccelFlag,
+			Aliases: []string{hwaccelAlias},
+			Usage:   hwaccelUsage,
+		},
+		hwaccelDeviceFlag: &cli.StringFlag{
+			Name:    hwaccelDeviceFlag,
+			Aliases: []string{hwaccelDeviceAlias},
+			Usage:   hwaccelDeviceUsage,
 		},
 		skipPartsFlag: &cli.IntFlag{
 			Name:    skipPartsFlag,
@@ -1260,10 +1730,49 @@ func main() {
 			Value:   false,
 			Usage:   fromBackUsage,
 		},
+		skipKeyframesFlag: &cli.BoolFlag{
+			Name:    skipKeyframesFlag,
+			Aliases: []string{skipKeyframesAlias},
+			Value:   false,
+			Usage:   skipKeyframesUsage,
+		},
+		maxNameLengthFlag: &cli.IntFlag{
+			Name:    maxNameLengthFlag,
+			Aliases: []string{maxNameLengthAlias},
+			Value:   maxNameLengthDefault,
+			Usage:   maxNameLengthUsage,
+		},
+		dimensionPresetFlag: &cli.StringFlag{
+			Name:    dimensionPresetFlag,
+			Aliases: []string{dimensionPresetAlias},
+			Usage:   dimensionPresetUsage,
+		},
+		widthFlag: &cli.IntFlag{
+			Name:  widthFlag,
+			Usage: widthUsage,
+		},
+		heightFlag: &cli.IntFlag{
+			Name:  heightFlag,
+			Usage: heightUsage,
+		},
+		xFlag: &cli.StringFlag{
+			Name:  xFlag,
+			Usage: xUsage,
+		},
+		yFlag: &cli.StringFlag{
+			Name:  yFlag,
+			Usage: yUsage,
+		},
 	}
 
 	app := &cli.App{
 		Name: "ffr",
+		Flags: []cli.Flag{
+			globalFlags[backwardsFlag],
+			globalFlags[dryRunFlag],
+			globalFlags[forceFlag],
+			globalFlags[verboseFlag],
+		},
 		Commands: []*cli.Command{
 			{
 				Name:      addNumberCommand,
@@ -1271,14 +1780,10 @@ func main() {
 				Usage:     addNumberUsage,
 				ArgsUsage: addNumberArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[maxCountFlag],
-					allFlags[regexpFlag],
-					allFlags[regexpGroupFlag],
-					allFlags[skipFindsFlag],
-					allFlags[verboseFlag],
+					commandFlags[maxCountFlag],
+					commandFlags[regexpFlag],
+					commandFlags[regexpGroupFlag],
+					commandFlags[skipFindsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.addNumber)
@@ -1290,12 +1795,8 @@ func main() {
 				Usage:     deletePartsUsage,
 				ArgsUsage: deletePartsArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[fromBackFlag],
-					allFlags[partsFlag],
-					allFlags[verboseFlag],
+					commandFlags[fromBackFlag],
+					commandFlags[partsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.deleteParts)
@@ -1307,14 +1808,10 @@ func main() {
 				Usage:     deleteRegexpUsage,
 				ArgsUsage: deleteRegexpArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[maxCountFlag],
-					allFlags[regexpFlag],
-					allFlags[regexpGroupFlag],
-					allFlags[verboseFlag],
-					allFlags[skipPartsFlag],
+					commandFlags[maxCountFlag],
+					commandFlags[regexpFlag],
+					commandFlags[regexpGroupFlag],
+					commandFlags[skipPartsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.deleteRegexp)
@@ -1326,12 +1823,8 @@ func main() {
 				Usage:     insertBeforeUsage,
 				ArgsUsage: insertBeforeArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-					allFlags[verboseFlag],
-					allFlags[skipDashPrefixFlag],
+					commandFlags[regexpFlag],
+					commandFlags[skipDashPrefixFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.insertBefore)
@@ -1343,12 +1836,8 @@ func main() {
 				Usage:     insertDimensionsUsage,
 				ArgsUsage: insertDimensionsArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-					allFlags[verboseFlag],
-					allFlags[skipDashPrefixFlag],
+					commandFlags[regexpFlag],
+					commandFlags[skipDashPrefixFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.insertDimensionsBefore)
@@ -1359,11 +1848,7 @@ func main() {
 				Aliases:   strings.Split(keyFramesAliases, ", "),
 				Usage:     keyFramesUsage,
 				ArgsUsage: keyFramesArgsUsage,
-				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[verboseFlag],
-				},
+				Flags:     []cli.Flag{},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.keyFrames)
 				},
@@ -1374,13 +1859,9 @@ func main() {
 				Usage:     mergePartsUsage,
 				ArgsUsage: mergePartsArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[deleteTextFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[regexpFlag],
-					allFlags[skipPartsFlag],
-					allFlags[verboseFlag],
+					commandFlags[deleteTextFlag],
+					commandFlags[regexpFlag],
+					commandFlags[skipPartsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.mergeParts)
@@ -1392,11 +1873,7 @@ func main() {
 				Usage:     prefixUsage,
 				ArgsUsage: prefixArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[skipPartsFlag],
-					allFlags[verboseFlag],
+					commandFlags[skipPartsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.prefix)
@@ -1408,13 +1885,11 @@ func main() {
 				ArgsUsage:   reencodeArgsUsage,
 				Description: reencodeDescription,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[codecFlag],
-					allFlags[crfFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[presetFlag],
-					allFlags[verboseFlag],
+					commandFlags[codecFlag],
+					commandFlags[crfFlag],
+					commandFlags[presetFlag],
+					commandFlags[hwaccelFlag],
+					commandFlags[hwaccelDeviceFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.reEncode)
@@ -1426,11 +1901,7 @@ func main() {
 				Usage:     replaceUsage,
 				ArgsUsage: replaceArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[skipFindsFlag],
-					allFlags[verboseFlag],
+					commandFlags[skipFindsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 2, a.replace)
@@ -1442,11 +1913,7 @@ func main() {
 				Usage:     suffixUsage,
 				ArgsUsage: suffixArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[skipPartsFlag],
-					allFlags[verboseFlag],
+					commandFlags[skipPartsFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.suffix)
@@ -1458,13 +1925,29 @@ func main() {
 				Usage:     cropUsage,
 				ArgsUsage: cropArgsUsage,
 				Flags: []cli.Flag{
-					allFlags[backwardsFlag],
-					allFlags[dryRunFlag],
-					allFlags[forceFlag],
-					allFlags[verboseFlag],
+					commandFlags[widthFlag],
+					commandFlags[heightFlag],
+					commandFlags[xFlag],
+					commandFlags[yFlag],
+					commandFlags[dimensionPresetFlag],
 				},
 				Action: func(c *cli.Context) error {
-					return process(c, 4, a.crop)
+					return process(c, 0, a.crop)
+				},
+			},
+			{
+				Name:      infoCommand,
+				Aliases:   strings.Split(infoAliases, ", "),
+				Usage:     infoUsage,
+				ArgsUsage: infoArgsUsage,
+				Flags: []cli.Flag{
+					commandFlags[skipKeyframesFlag],
+					commandFlags[maxNameLengthFlag],
+				},
+				Action: func(c *cli.Context) error {
+					_ = c.Set(backwardsFlag, "0")
+
+					return processAll(c, 0, a.infoAll)
 				},
 			},
 		},

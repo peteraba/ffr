@@ -718,7 +718,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			want: []string{"foo-320x240.mp4"},
 		},
 		{
-			name: "default with extra info",
+			name: "default with extra infoAll",
 			need: []string{"foo-1bar.mp4"},
 			args: args{
 				filePath:          "foo-1bar.mp4",
@@ -967,6 +967,18 @@ func Test_mergeParts(t *testing.T) {
 			},
 			want: []string{"foo-1bar-2baz-3baz.txt"},
 		},
+		{
+			name: "complex",
+			need: []string{"foo-1080p-0pro-bar-2ffc.txt"},
+			args: args{
+				filePath: "foo-1080p-0pro-bar-2ffc.txt",
+				// regularExpression: "halfpro|pro|amat",
+				deleteText:     "-ffc",
+				forceOverwrite: false,
+				dryRun:         false,
+			},
+			want: []string{"foo-1080p-2pro-bar.txt"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1102,6 +1114,7 @@ func Test_reEncode(t *testing.T) {
 		codec    string
 		crf      int
 		preset   string
+		hwaccel  string
 		dryRun   bool
 	}
 	tests := []struct {
@@ -1208,7 +1221,7 @@ func Test_reEncode(t *testing.T) {
 			require.NoError(t, err)
 
 			// execute
-			_, result := reEncode(fi, tt.args.codec, tt.args.crf, tt.args.preset, tt.args.dryRun)
+			_, result := reEncode(fi, tt.args.codec, tt.args.crf, tt.args.preset, tt.args.hwaccel, "", tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
@@ -1485,6 +1498,7 @@ func Test_crop(t *testing.T) {
 		dryRun            bool
 		width, height     int
 		x, y              string
+		dimensionPreset   string
 	}
 	tests := []struct {
 		name       string
@@ -1540,7 +1554,7 @@ func Test_crop(t *testing.T) {
 
 			// execute
 			a := tt.args
-			result := crop(fi, a.width, a.height, a.x, a.y, a.forceOverwrite, a.dryRun)
+			result := crop(fi, a.width, a.height, a.x, a.y, a.dimensionPreset, a.forceOverwrite, a.dryRun)
 
 			// assert
 			assert.NoError(t, result)
