@@ -979,11 +979,17 @@ func (a App) addNumber(c *cli.Context, args []string, fi os.FileInfo, dryRun boo
 	return addNumber(fi, regularExpression, numberToAdd, regexpGroup, skipFinds, maxCount, forceOverwrite, dryRun)
 }
 
-func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDashPrefix, forceOverwrite, dryRun bool) error {
+func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDuplicate, skipDashPrefix, forceOverwrite, dryRun bool) error {
 	filePath := fi.Name()
 
 	if regularExpression == "" {
 		regularExpression = "\\d+[a-z]+"
+	}
+
+	if skipDuplicate && strings.Contains(filePath, insertText) {
+		l.Printf(`skipping as duplicate is found. needle: %q, haystack: %q`, insertText, filePath)
+
+		return nil
 	}
 
 	basePath := filepath.Base(filePath)
@@ -1021,11 +1027,12 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDash
 func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
 	skipDashPrefix := c.Bool(skipDashPrefixFlag)
+	skipDuplicate := c.Bool(skipDuplicateFlag)
 	insert := args[1]
 
 	forceOverwrite := c.Bool(forceFlag)
 
-	return insertBefore(fi, regularExpression, insert, skipDashPrefix, forceOverwrite, dryRun)
+	return insertBefore(fi, regularExpression, insert, skipDuplicate, skipDashPrefix, forceOverwrite, dryRun)
 }
 
 var wellKnown = map[string]string{
@@ -1065,7 +1072,7 @@ func getDimensions(fi os.FileInfo) (string, error) {
 	return dimensions, nil
 }
 
-func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDashPrefix, forceOverwrite, dryRun bool) error {
+func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun bool) error {
 	dimensions, err := getDimensions(fi)
 	if err != nil {
 		return err
@@ -1075,15 +1082,16 @@ func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDashPr
 		dimensions = found
 	}
 
-	return insertBefore(fi, regularExpression, dimensions, skipDashPrefix, forceOverwrite, dryRun)
+	return insertBefore(fi, regularExpression, dimensions, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun)
 }
 
 func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
 	skipDashPrefix := c.Bool(skipDashPrefixFlag)
+	skipDuplicatePrefix := c.Bool(skipDuplicateFlag)
 	forceOverwrite := c.Bool(forceFlag)
 
-	return insertDimensionsBefore(fi, regularExpression, skipDashPrefix, forceOverwrite, dryRun)
+	return insertDimensionsBefore(fi, regularExpression, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun)
 }
 
 func parseDimensions(dimensions string) (int, int, error) {
@@ -1609,6 +1617,10 @@ const (
 	skipDashPrefixAlias = "sdp"
 	skipDashPrefixUsage = "if true, the regular expression will not be prefixed with a dash"
 
+	skipDuplicateFlag  = "skip-duplicate"
+	skipDuplicateAlias = "sd"
+	skipDuplicateUsage = "if true, the text will not be added if it already exists"
+
 	verboseFlag  = "verbose"
 	verboseAlias = "v"
 	verboseUsage = "print commands before executing them"
@@ -1699,6 +1711,12 @@ func main() {
 			Aliases: []string{skipDashPrefixAlias},
 			Value:   true,
 			Usage:   skipDashPrefixUsage,
+		},
+		skipDuplicateFlag: &cli.BoolFlag{
+			Name:    skipDuplicateFlag,
+			Aliases: []string{skipDuplicateAlias},
+			Value:   false,
+			Usage:   skipDuplicateUsage,
 		},
 		deleteTextFlag: &cli.StringFlag{
 			Name:    deleteTextFlag,
@@ -1825,6 +1843,7 @@ func main() {
 				Flags: []cli.Flag{
 					commandFlags[regexpFlag],
 					commandFlags[skipDashPrefixFlag],
+					commandFlags[skipDuplicateFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 1, a.insertBefore)
@@ -1838,6 +1857,7 @@ func main() {
 				Flags: []cli.Flag{
 					commandFlags[regexpFlag],
 					commandFlags[skipDashPrefixFlag],
+					commandFlags[skipDuplicateFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.insertDimensionsBefore)

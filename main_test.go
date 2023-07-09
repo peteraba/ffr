@@ -561,6 +561,7 @@ func Test_insertBefore(t *testing.T) {
 	type args struct {
 		filePath          string
 		regularExpression string
+		skipDuplicate     bool
 		skipDashPrefix    bool
 		insertText        string
 		forceOverwrite    bool
@@ -640,7 +641,7 @@ func Test_insertBefore(t *testing.T) {
 			// execute
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
-			result := insertBefore(fi, tt.args.regularExpression, tt.args.insertText, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
+			result := insertBefore(fi, tt.args.regularExpression, tt.args.insertText, tt.args.skipDuplicate, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
@@ -678,7 +679,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		// execute
 		fi, err := os.Stat(vidPath)
 		require.NoError(t, err)
-		result := insertDimensionsBefore(fi, "", true, forceOverwrite, dryRun)
+		result := insertDimensionsBefore(fi, "", false, true, forceOverwrite, dryRun)
 
 		// assert
 		assert.NoError(t, result)
@@ -694,6 +695,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 	type args struct {
 		filePath          string
 		regularExpression string
+		skipDuplicate     bool
 		skipDashPrefix    bool
 		insertText        string
 		forceOverwrite    bool
@@ -711,6 +713,33 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo.mp4",
 				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			want: []string{"foo-320x240.mp4"},
+		},
+		{
+			name: "duplicate ok",
+			need: []string{"foo-320x240.mp4"},
+			args: args{
+				filePath:          "foo-320x240.mp4",
+				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			want: []string{"foo-320x240-320x240.mp4"},
+		},
+		{
+			name: "duplicate not ok",
+			need: []string{"foo-320x240.mp4"},
+			args: args{
+				filePath:          "foo-320x240.mp4",
+				regularExpression: "",
+				skipDuplicate:     true,
 				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -723,6 +752,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-1bar.mp4",
 				regularExpression: "",
+				skipDuplicate:     false,
 				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -735,6 +765,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo-BAR.mp4",
 				regularExpression: "BAR",
+				skipDuplicate:     false,
 				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -747,6 +778,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foo4bar.mp4",
 				regularExpression: "",
+				skipDuplicate:     false,
 				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -759,6 +791,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			args: args{
 				filePath:          "foobar-barbaz-Foo bar baz 4 quix-0cut-1ffc-bar-baz-2foo-baz.mp4",
 				regularExpression: "",
+				skipDuplicate:     false,
 				skipDashPrefix:    false,
 				forceOverwrite:    false,
 				dryRun:            false,
@@ -781,7 +814,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			// execute
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
-			result := insertDimensionsBefore(fi, tt.args.regularExpression, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
+			result := insertDimensionsBefore(fi, tt.args.regularExpression, tt.args.skipDuplicate, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
