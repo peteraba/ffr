@@ -328,7 +328,7 @@ func NewReEncoder() *ReEncoder {
 	return &ReEncoder{
 		lock:     &sync.Mutex{},
 		params:   make(map[string]string),
-		keys:     []string{videoCodecKey, hwaccelKey, crfKey, losslessKey, presetKey, bitRateKey},
+		keys:     []string{videoCodecKey, hwaccelKey, crfKey, losslessKey, presetKey},
 		boolKeys: []string{losslessKey},
 	}
 }
