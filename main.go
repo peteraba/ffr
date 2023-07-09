@@ -111,16 +111,16 @@ func safeRename(oldPath, newPath string, forceOverwrite bool) error {
 	_, err := os.Stat(newPath)
 	if err == nil || !os.IsNotExist(err) {
 		if !forceOverwrite {
-			l.Printf("file already exists. path: '%s'", newPath)
+			l.Printf("file already exists. path: %q", newPath)
 			return err
 		}
 
-		l.Printf("force overwrite. path: '%s'", newPath)
+		l.Printf("force overwrite. path: %q", newPath)
 	}
 
 	err = os.Rename(oldPath, newPath)
 	if err != nil {
-		l.Printf("unexpected error during renaming file. old path: '%s', new path: '%s', err: %s", oldPath, newPath, err)
+		l.Printf("unexpected error during renaming file. old path: %q, new path: %q, err: %s", oldPath, newPath, err)
 	}
 
 	return err
@@ -254,7 +254,7 @@ func exec(command string) (string, error) {
 type App struct{}
 
 func findKeyFrames(fi os.FileInfo) ([]string, error) {
-	command := fmt.Sprintf(`ffprobe -loglevel error -select_streams v:0 -show_entries packet=pts_time,flags -of csv=print_section=0 "%s"`, fi.Name())
+	command := fmt.Sprintf(`ffprobe -loglevel error -select_streams v:0 -show_entries packet=pts_time,flags -of csv=print_section=0 %q`, fi.Name())
 
 	res, err := script.Exec(command).Match(",K__").FilterLine(func(line string) string {
 		return strings.Split(line, ",")[0]
@@ -585,7 +585,7 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 	}
 
 	outputPath := fmt.Sprintf("%s-%s.%s", basePath, params.GetPath(), extNew)
-	command := fmt.Sprintf(`ffmpeg %s "%s"`, params.String(), outputPath)
+	command := fmt.Sprintf(`ffmpeg %s %q`, params.String(), outputPath)
 
 	l.Printf("new path: %s", outputPath)
 	l.Printf("command: %s", command)
@@ -657,7 +657,7 @@ func suffix(fi os.FileInfo, newPart string, skip int, forceOverwrite, dryRun boo
 
 	parts := strings.Split(basePath, separator)
 	if skip > len(parts) {
-		return fmt.Errorf("more to skip then parts present. file: '%s' skip: %d, parts: %d", basePath, skip, len(parts))
+		return fmt.Errorf("more to skip then parts present. file: %q skip: %d, parts: %d", basePath, skip, len(parts))
 	}
 	skipInverse := len(parts) - skip
 
@@ -691,7 +691,7 @@ func replace(fi os.FileInfo, search, replaceWith string, skip int, forceOverwrit
 
 	parts := strings.Split(basePath, search)
 	if skip > len(parts)-1 {
-		return fmt.Errorf("more to skip than found occurances. file: '%s', skip: %d, found: %d", basePath, skip, len(parts)-1)
+		return fmt.Errorf("more to skip than found occurances. file: %q, skip: %d, found: %d", basePath, skip, len(parts)-1)
 	}
 
 	if len(parts) <= 1 {
@@ -703,7 +703,7 @@ func replace(fi os.FileInfo, search, replaceWith string, skip int, forceOverwrit
 	end := strings.Join(parts[skip+1:], search)
 
 	newPath := start + replaceWith + end + ext
-	l.Printf(`"%s" -> "%s", search: "%s", replace with: "%s"`, filePath, newPath, search, replaceWith)
+	l.Printf(`%q -> %q, search: %q, replace with: %q`, filePath, newPath, search, replaceWith)
 
 	if dryRun {
 		return nil
@@ -780,7 +780,7 @@ func mergeParts(fi os.FileInfo, regularExpression, deleteText string, forceOverw
 	}
 
 	if dryRun {
-		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+		l.Printf(`%q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -834,7 +834,7 @@ func deleteRegexp(fi os.FileInfo, regularExpression string, regexpGroup, skipFin
 	newPath := basePath + ext
 
 	if dryRun {
-		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+		l.Printf(`%q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -882,7 +882,7 @@ func deleteParts(fi os.FileInfo, partsToDelete []int, fromBack, forceOverwrite, 
 	newPath := strings.Join(newParts, "-") + ext
 
 	if dryRun {
-		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+		l.Printf(`%q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -956,7 +956,7 @@ func addNumber(fi os.FileInfo, regularExpression string, numberToAdd int64, rege
 	newPath := basePath + ext
 
 	if dryRun {
-		l.Printf(`"%s" -> "%s"`, filePath, newPath)
+		l.Printf(`%q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -1009,7 +1009,7 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDash
 		newPath = strings.Replace(basePath, matched[len(matched)-1][1], insertText, 1) + ext
 	}
 
-	l.Printf(`"%s" -> "%s", found: "%s", new: "%s"`, filePath, newPath, matched, insertText)
+	l.Printf(`%q -> %q, found: %q, new: %q`, filePath, newPath, matched, insertText)
 
 	if dryRun {
 		return nil
@@ -1047,11 +1047,11 @@ func getDimensions(fi os.FileInfo) (string, error) {
 
 	dimensions, err := exec(cmd)
 	if err != nil {
-		return "", fmt.Errorf("failed to probe file. command: '%s', err: %w", cmd, err)
+		return "", fmt.Errorf("failed to probe file. command: %q, err: %w", cmd, err)
 	}
 
 	if dimensions == "" {
-		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
+		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: %q", cmd)
 	}
 
 	dimensions = strings.TrimSpace(dimensions)
@@ -1059,7 +1059,7 @@ func getDimensions(fi os.FileInfo) (string, error) {
 	dimensions = dimensionsRegexp.FindString(dimensions)
 
 	if dimensions == "" {
-		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: '%s'", cmd)
+		return "", fmt.Errorf("failed to probe file, output was empty or invalid. command: %q", cmd)
 	}
 
 	return dimensions, nil
@@ -1194,7 +1194,7 @@ func crop(fi os.FileInfo, width, height int, x, y, dimensionPreset string, force
 
 	newPath := fmt.Sprintf("%s-%dx%d%s", basePath, width, height, ext)
 
-	cmd := fmt.Sprintf(`ffmpeg -i "%s" -filter:v "crop=%d:%d:%d:%d" "%s"`, fi.Name(), width, height, xPos, yPos, newPath)
+	cmd := fmt.Sprintf(`ffmpeg -i %q -filter:v "crop=%d:%d:%d:%d" %q`, fi.Name(), width, height, xPos, yPos, newPath)
 	l.Printf(cmd)
 
 	if dryRun {
@@ -1295,11 +1295,11 @@ func intToString(n int64, s, s2 string) string {
 func getBitRate(fi os.FileInfo) (int64, error) {
 	bitrateRaw, err := exec(fmt.Sprintf("ffprobe -v quiet -select_streams v:0 -show_entries stream=bit_rate -of default=noprint_wrappers=1 %q", fi.Name()))
 	if err != nil {
-		return 0, fmt.Errorf("failed to probe file. file: '%s', err: %w", fi.Name(), err)
+		return 0, fmt.Errorf("failed to probe file. file: %q, err: %w", fi.Name(), err)
 	}
 
 	if len(bitrateRaw) < 10 {
-		return 0, fmt.Errorf("invalid probe result. file: '%s', bitrate found: %s", fi.Name(), bitrateRaw)
+		return 0, fmt.Errorf("invalid probe result. file: %q, bitrate found: %s", fi.Name(), bitrateRaw)
 	}
 
 	bitrateRaw = strings.TrimSpace(bitrateRaw[9:])
@@ -1309,7 +1309,7 @@ func getBitRate(fi os.FileInfo) (int64, error) {
 
 	bitRate, err := strconv.ParseInt(bitrateRaw, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse bit rate. file: '%s', err: %w", fi.Name(), err)
+		return 0, fmt.Errorf("failed to parse bit rate. file: %q, err: %w", fi.Name(), err)
 	}
 
 	return bitRate, nil
@@ -1318,12 +1318,12 @@ func getBitRate(fi os.FileInfo) (int64, error) {
 func getCodec(fi os.FileInfo) (string, error) {
 	codec, err := exec(fmt.Sprintf("ffprobe -v quiet -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 %q", fi.Name()))
 	if err != nil {
-		return "", fmt.Errorf("failed to probe file for codec. file: '%s', err: %w", fi.Name(), err)
+		return "", fmt.Errorf("failed to probe file for codec. file: %q, err: %w", fi.Name(), err)
 	}
 
 	parts := strings.Split(strings.TrimSpace(codec), " ")
 	if len(parts) > 1 {
-		return "", fmt.Errorf("suspicious codec found. file: '%s', codec: %s", fi.Name(), codec)
+		return "", fmt.Errorf("suspicious codec found. file: %q, codec: %s", fi.Name(), codec)
 	}
 
 	return parts[0], nil
@@ -1332,12 +1332,12 @@ func getCodec(fi os.FileInfo) (string, error) {
 func getLength(fi os.FileInfo) (float64, error) {
 	lengthRaw, err := exec(fmt.Sprintf("ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 %q", fi.Name()))
 	if err != nil {
-		return 0.0, fmt.Errorf("failed to probe file for length. file: '%s', err: %w", fi.Name(), err)
+		return 0.0, fmt.Errorf("failed to probe file for length. file: %q, err: %w", fi.Name(), err)
 	}
 
 	l, err := strconv.ParseFloat(strings.TrimSpace(lengthRaw), 64)
 	if err != nil {
-		return 0.0, fmt.Errorf("failed to parse length. file: '%s', err: %w", fi.Name(), err)
+		return 0.0, fmt.Errorf("failed to parse length. file: %q, err: %w", fi.Name(), err)
 	}
 
 	return l, nil
