@@ -472,7 +472,7 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 
 		// https://trac.ffmpeg.org/wiki/Encode/H.265
 		if crf == 0 {
-			crf = 28
+			crf = 23
 		}
 
 		preset, err := findPreset(preset)
@@ -508,7 +508,7 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 
 		// https://trac.ffmpeg.org/wiki/Encode/H.264
 		if crf == 0 {
-			crf = 23
+			crf = 20
 		}
 
 		preset, err := findPreset(preset)
