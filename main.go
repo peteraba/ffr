@@ -1085,6 +1085,63 @@ func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDuplic
 	return insertBefore(fi, regularExpression, dimensions, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun)
 }
 
+var dateRegexp1 = regexp.MustCompile(`20\d{6}`)
+var dateRegexp2 = regexp.MustCompile(`\d{6}`)
+var dateFormat1 = "20060102"
+var dateFormat2 = "060102"
+var dateFormat3 = "2006.01.02"
+
+func prefixDate(fi os.FileInfo, forceOverwrite, dryRun bool) error {
+	filePath := fi.Name()
+
+	basePath := filepath.Base(filePath)
+	ext := filepath.Ext(filePath)
+	if ext != "" {
+		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	matches := dateRegexp1.FindAllString(basePath, -1)
+	format := dateFormat1
+	l.Printf("basePath: %s", basePath)
+	l.Printf("matches: %#v", matches)
+
+	if len(matches) == 0 {
+		matches = dateRegexp2.FindAllString(basePath, -1)
+		format = dateFormat2
+		l.Printf("basePath: %s", basePath)
+		l.Printf("matches: %#v", matches)
+
+		if len(matches) == 0 {
+			return errors.New("no matches")
+		}
+	}
+
+	if len(matches) > 1 {
+		return errors.New("too many matches")
+	}
+
+	parsedDate, err := time.Parse(format, matches[0])
+	if err != nil {
+		return fmt.Errorf("failed to parse date. err: %w", err)
+	}
+
+	newPath := parsedDate.Format(dateFormat3) + "-" + basePath + ext
+
+	if dryRun {
+		l.Printf(`%q -> %q`, filePath, newPath)
+
+		return nil
+	}
+
+	return safeRename(filePath, newPath, forceOverwrite)
+}
+
+func (a App) datePrefix(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
+	forceOverwrite := c.Bool(forceFlag)
+
+	return prefixDate(fi, forceOverwrite, dryRun)
+}
+
 func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
 	skipDashPrefix := c.Bool(skipDashPrefixFlag)
@@ -1532,6 +1589,11 @@ https://trac.ffmpeg.org/wiki/Encode/VP9`
 	infoAliases   = "i"
 	infoUsage     = "display info about the video(s). (The backwards flag is ignored.)"
 	infoArgsUsage = "[files...]"
+
+	datePrefixCommand   = "prefix-date"
+	datePrefixAliases   = "pd"
+	datePrefixUsage     = `add a date prefix to the file name`
+	datePrefixArgsUsage = "[files...]"
 )
 
 // flags
@@ -1968,6 +2030,16 @@ func main() {
 					_ = c.Set(backwardsFlag, "0")
 
 					return processAll(c, 0, a.infoAll)
+				},
+			},
+			{
+				Name:      datePrefixCommand,
+				Aliases:   strings.Split(datePrefixAliases, ", "),
+				Usage:     datePrefixUsage,
+				ArgsUsage: datePrefixArgsUsage,
+				Flags:     []cli.Flag{},
+				Action: func(c *cli.Context) error {
+					return process(c, 0, a.datePrefix)
 				},
 			},
 		},

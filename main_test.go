@@ -33,6 +33,114 @@ func cleanUp(t *testing.T, want, need []string) {
 	}
 }
 
+func Test_prefixDate(t *testing.T) {
+	type args struct {
+		filePath       string
+		forceOverwrite bool
+		dryRun         bool
+	}
+	tests := []struct {
+		name    string
+		need    []string
+		args    args
+		want    []string
+		wantErr string
+	}{
+		{
+			name: "complete date works",
+			need: []string{"foo-20231229.txt"},
+			args: args{
+				filePath:       "foo-20231229.txt",
+				forceOverwrite: false,
+				dryRun:         false,
+			},
+			want: []string{"2023.12.29-foo-20231229.txt"},
+		},
+		{
+			name: "short date works",
+			need: []string{"foo-231229.txt"},
+			args: args{
+				filePath:       "foo-231229.txt",
+				forceOverwrite: false,
+				dryRun:         false,
+			},
+			want: []string{"2023.12.29-foo-231229.txt"},
+		},
+		{
+			name: "multiple dates do not work",
+			need: []string{"foo-20231229-and-20231230.txt"},
+			args: args{
+				filePath:       "foo-20231229-and-20231230.txt",
+				forceOverwrite: false,
+				dryRun:         false,
+			},
+			wantErr: "too many matches",
+			want:    []string{"foo-20231229-and-20231230.txt"},
+		},
+		{
+			name: "multiple dates do not work",
+			need: []string{"foo-231229-and-231230.txt"},
+			args: args{
+				filePath:       "foo-231229-and-231230.txt",
+				forceOverwrite: false,
+				dryRun:         false,
+			},
+			wantErr: "too many matches",
+			want:    []string{"foo-231229-and-231230.txt"},
+		},
+		{
+			name: "force overwrite",
+			need: []string{"foo-231229.txt", "2023.12.29-foo-231229.txt"},
+			args: args{
+				filePath:       "foo-231229.txt",
+				forceOverwrite: true,
+				dryRun:         false,
+			},
+			want: []string{"2023.12.29-foo-231229.txt"},
+		},
+		{
+			name: "dry-run",
+			need: []string{"foo-231230.txt"},
+			args: args{
+				filePath:       "foo-231230.txt",
+				forceOverwrite: true,
+				dryRun:         true,
+			},
+			want: []string{"foo-231230.txt"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer cleanUp(t, tt.want, tt.need)
+
+			var err error
+
+			// setup
+			for _, filePath := range tt.need {
+				err = os.WriteFile(filePath, nil, 0777)
+				require.NoError(t, err)
+			}
+
+			fi, err := os.Stat(tt.args.filePath)
+			require.NoError(t, err)
+
+			// execute
+			result := prefixDate(fi, tt.args.forceOverwrite, tt.args.dryRun)
+
+			// assert
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, result, tt.wantErr)
+			} else {
+				assert.NoError(t, result)
+			}
+
+			for _, fileName := range tt.want {
+				assert.FileExists(t, fileName)
+			}
+		})
+	}
+}
+
 func Test_addNumber(t *testing.T) {
 	type args struct {
 		filePath          string
