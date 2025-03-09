@@ -45,6 +45,7 @@ const (
 	qHDPreset2    = "1440p"
 	fullHDPreset2 = "1080p"
 	hdPreset2     = "720p"
+	edPreset      = "540p"
 	sdPreset2     = "480p"
 )
 
@@ -61,9 +62,22 @@ const (
 	fullHDHeight = 1080
 	hdWidth      = 1280
 	hdHeight     = 720
+	edWidth      = 960
+	edHeight     = 540
 	sdWidth      = 640
 	sdHeight     = 480
 )
+
+var wellKnown = map[string]string{
+	"7680x4320": "8k-4320p",
+	"3840x2160": "4k-2160p",
+	"2048x1080": "2k-1080p",
+	"2560x1440": "qhd-1440p",
+	"1920x1080": "fullhd-1080p",
+	"1280x720":  "hd-720p",
+	"960x540":   "ed-540p",
+	"640x480":   "sd-480p",
+}
 
 const (
 	defaultCodec  = encoderH265
@@ -448,7 +462,7 @@ func getNewBitRates(fi os.FileInfo, encoder string) (string, string, error) {
 	return rbr, rbr2, nil
 }
 
-func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDevice string, dryRun bool) (string, error) {
+func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDevice string, replaceFile, dryRun bool) (string, error) {
 	filePath := fi.Name()
 
 	basePath := filepath.Base(filePath)
@@ -585,6 +599,19 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 	}
 
 	outputPath := fmt.Sprintf("%s-%s.%s", basePath, params.GetPath(), extNew)
+	i := 1
+	for {
+		_, err := os.Stat(outputPath)
+		if err != nil {
+			break
+		}
+
+		l.Printf("file exists: %s", outputPath)
+
+		outputPath = fmt.Sprintf("%s-%s%d.%s", basePath, params.GetPath(), i, extNew)
+		i++
+	}
+
 	command := fmt.Sprintf(`ffmpeg %s %q`, params.String(), outputPath)
 
 	l.Printf("new path: %s", outputPath)
@@ -597,6 +624,16 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 	output, err := exec(command)
 	l.Println(output)
 
+	if replaceFile {
+		backupFile := fmt.Sprintf("%s-backup.%s", basePath, extNew)
+
+		l.Printf(fmt.Sprintf("mv %s %s", filePath, backupFile))
+		l.Printf(fmt.Sprintf("mv %s %s", outputPath, filePath))
+
+		exec(fmt.Sprintf("mv %s %s", filePath, backupFile))
+		exec(fmt.Sprintf("mv %s %s", outputPath, filePath))
+	}
+
 	return outputPath, err
 }
 
@@ -606,8 +643,9 @@ func (a App) reEncode(c *cli.Context, args []string, fi os.FileInfo, dryRun bool
 	preset := c.String(presetFlag)
 	hwaccel := c.String(hwaccelFlag)
 	hwaccelDevice := c.String(hwaccelDeviceFlag)
+	replaceFile := c.Bool(replaceFileFlag)
 
-	_, err := reEncode(fi, codec, crf, preset, hwaccel, hwaccelDevice, dryRun)
+	_, err := reEncode(fi, codec, crf, preset, hwaccel, hwaccelDevice, replaceFile, dryRun)
 
 	return err
 }
@@ -1035,16 +1073,6 @@ func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun 
 	return insertBefore(fi, regularExpression, insert, skipDuplicate, skipDashPrefix, forceOverwrite, dryRun)
 }
 
-var wellKnown = map[string]string{
-	"640x480":   "sd-480p",
-	"1280x720":  "hd-720p",
-	"1920x1080": "fullhd-1080p",
-	"2560x1440": "qhd-1440p",
-	"2048x1080": "2k-1080p",
-	"3840x2160": "4k-2160p",
-	"7680x4320": "8k-4320p",
-}
-
 var dimensionsRegexp = regexp.MustCompile(`\d+x\d+$`)
 
 func getDimensions(fi os.FileInfo) (string, error) {
@@ -1196,6 +1224,9 @@ func crop(fi os.FileInfo, width, height int, x, y, dimensionPreset string, force
 	case hdPreset, hdPreset2:
 		width = hdWidth
 		height = hdHeight
+	case edPreset:
+		width = edWidth
+		height = edHeight
 	case sdPreset, sdPreset2:
 		width = sdWidth
 		height = sdHeight
@@ -1695,6 +1726,10 @@ const (
 	maxNameLengthAlias   = "mnl"
 	maxNameLengthUsage   = "maximum length of a file name"
 	maxNameLengthDefault = 50
+
+	replaceFileFlag  = "replace-file"
+	replaceFileAlias = "rf"
+	replaceFileUsage = "if true, the original file is backed up and replaced"
 )
 
 func main() {
@@ -1843,6 +1878,12 @@ func main() {
 			Name:  yFlag,
 			Usage: yUsage,
 		},
+		replaceFileFlag: &cli.BoolFlag{
+			Name:    replaceFileFlag,
+			Aliases: []string{replaceFileAlias},
+			Value:   false,
+			Usage:   replaceFileUsage,
+		},
 	}
 
 	app := &cli.App{
@@ -1972,6 +2013,7 @@ func main() {
 					commandFlags[presetFlag],
 					commandFlags[hwaccelFlag],
 					commandFlags[hwaccelDeviceFlag],
+					commandFlags[replaceFileFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.reEncode)

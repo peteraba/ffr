@@ -1154,7 +1154,6 @@ func Test_prefix(t *testing.T) {
 		skip           int
 		forceOverwrite bool
 		dryRun         bool
-		verbose        bool
 	}
 	tests := []struct {
 		name string
@@ -1251,12 +1250,13 @@ func Test_prefix(t *testing.T) {
 
 func Test_reEncode(t *testing.T) {
 	type args struct {
-		filePath string
-		codec    string
-		crf      int
-		preset   string
-		hwaccel  string
-		dryRun   bool
+		filePath    string
+		codec       string
+		crf         int
+		preset      string
+		hwaccel     string
+		replaceFile bool
+		dryRun      bool
 	}
 	tests := []struct {
 		name string
@@ -1268,11 +1268,12 @@ func Test_reEncode(t *testing.T) {
 			name: "libx264",
 			need: []string{"foo.mp4"},
 			args: args{
-				filePath: "foo.mp4",
-				codec:    "libx264",
-				crf:      51,
-				preset:   "veryfast",
-				dryRun:   false,
+				filePath:    "foo.mp4",
+				codec:       "libx264",
+				crf:         51,
+				preset:      "veryfast",
+				replaceFile: false,
+				dryRun:      false,
 			},
 			want: []string{"foo-libx264-51-veryfast.mp4"},
 		},
@@ -1280,23 +1281,25 @@ func Test_reEncode(t *testing.T) {
 			name: "libx264 default crf",
 			need: []string{"foo.mp4"},
 			args: args{
-				filePath: "foo.mp4",
-				codec:    "libx264",
-				crf:      0,
-				preset:   "veryfast",
-				dryRun:   false,
+				filePath:    "foo.mp4",
+				codec:       "libx264",
+				crf:         0,
+				preset:      "veryfast",
+				replaceFile: false,
+				dryRun:      false,
 			},
-			want: []string{"foo-libx264-23-veryfast.mp4"},
+			want: []string{"foo-libx264-20-veryfast.mp4"},
 		},
 		{
 			name: "libx265",
 			need: []string{"foo.mp4"},
 			args: args{
-				filePath: "foo.mp4",
-				codec:    "libx265",
-				crf:      25,
-				preset:   "ultrafast",
-				dryRun:   false,
+				filePath:    "foo.mp4",
+				codec:       "libx265",
+				crf:         25,
+				preset:      "ultrafast",
+				replaceFile: false,
+				dryRun:      false,
 			},
 			want: []string{"foo-libx265-25-ultrafast.mp4"},
 		},
@@ -1304,23 +1307,25 @@ func Test_reEncode(t *testing.T) {
 			name: "libx265 default crf",
 			need: []string{"foo.mp4"},
 			args: args{
-				filePath: "foo.mp4",
-				codec:    "libx265",
-				crf:      0,
-				preset:   "ultrafast",
-				dryRun:   false,
+				filePath:    "foo.mp4",
+				codec:       "libx265",
+				crf:         0,
+				preset:      "ultrafast",
+				replaceFile: false,
+				dryRun:      false,
 			},
-			want: []string{"foo-libx265-28-ultrafast.mp4"},
+			want: []string{"foo-libx265-23-ultrafast.mp4"},
 		},
 		{
 			name: "vp9",
 			need: []string{"foo.mp4"},
 			args: args{
-				filePath: "foo.mp4",
-				codec:    "vp9",
-				crf:      63,
-				preset:   "slow",
-				dryRun:   false,
+				filePath:    "foo.mp4",
+				codec:       "vp9",
+				crf:         63,
+				preset:      "slow",
+				replaceFile: false,
+				dryRun:      false,
 			},
 			want: []string{"foo-vp9-63.mkv"},
 		},
@@ -1328,21 +1333,11 @@ func Test_reEncode(t *testing.T) {
 			name: "vp9 default crf",
 			need: []string{"foo.mp4"},
 			args: args{
-				filePath: "foo.mp4",
-				codec:    "vp9",
-				crf:      0,
-				dryRun:   false,
-			},
-			want: []string{"foo-vp9-lossless.mkv"},
-		},
-		{
-			name: "vp9 default crf",
-			need: []string{"foo.mp4"},
-			args: args{
-				filePath: "foo.mp4",
-				codec:    "vp9",
-				crf:      0,
-				dryRun:   false,
+				filePath:    "foo.mp4",
+				codec:       "vp9",
+				crf:         0,
+				replaceFile: false,
+				dryRun:      false,
 			},
 			want: []string{"foo-vp9-lossless.mkv"},
 		},
@@ -1362,7 +1357,7 @@ func Test_reEncode(t *testing.T) {
 			require.NoError(t, err)
 
 			// execute
-			_, result := reEncode(fi, tt.args.codec, tt.args.crf, tt.args.preset, tt.args.hwaccel, "", tt.args.dryRun)
+			_, result := reEncode(fi, tt.args.codec, tt.args.crf, tt.args.preset, tt.args.hwaccel, "", tt.args.replaceFile, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
