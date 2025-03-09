@@ -17,7 +17,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const VERSION = "0.1.0"
+const VERSION = "0.1.1"
 
 const (
 	separator = "-"
@@ -125,7 +125,7 @@ func safeRename(oldPath, newPath string, forceOverwrite bool) error {
 		return nil
 	}
 
-	l.Println(oldPath, " -> ", newPath)
+	l.Println("safeRename: ", oldPath, " -> ", newPath)
 
 	_, err := os.Stat(newPath)
 	if err == nil || !os.IsNotExist(err) {
@@ -669,7 +669,7 @@ func prefix(fi os.FileInfo, newPart string, skip int, forceOverwrite bool, dryRu
 	newPath := concat(parts, skip, newPart, ext, separator)
 
 	if dryRun {
-		l.Println(filePath, " -> ", newPath)
+		l.Println("dryRun prefix: ", filePath, " -> ", newPath)
 
 		return nil
 	}
@@ -707,7 +707,7 @@ func suffix(fi os.FileInfo, newPart string, skip int, forceOverwrite, dryRun boo
 	newPath := concat(parts, skipInverse, newPart, ext, separator)
 
 	if dryRun {
-		l.Println(filePath, " -> ", newPath)
+		l.Println("dryRun suffix: ", filePath, " -> ", newPath)
 
 		return nil
 	}
@@ -746,7 +746,7 @@ func replace(fi os.FileInfo, search, replaceWith string, skip int, forceOverwrit
 	end := strings.Join(parts[skip+1:], search)
 
 	newPath := start + replaceWith + end + ext
-	l.Printf(`%q -> %q, search: %q, replace with: %q`, filePath, newPath, search, replaceWith)
+	l.Printf(`replace: %q -> %q, search: %q, replace with: %q`, filePath, newPath, search, replaceWith)
 
 	if dryRun {
 		return nil
@@ -823,7 +823,7 @@ func mergeParts(fi os.FileInfo, regularExpression, deleteText string, forceOverw
 	}
 
 	if dryRun {
-		l.Printf(`%q -> %q`, filePath, newPath)
+		l.Printf(`dryRun mergeParts: %q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -877,7 +877,7 @@ func deleteRegexp(fi os.FileInfo, regularExpression string, regexpGroup, skipFin
 	newPath := basePath + ext
 
 	if dryRun {
-		l.Printf(`%q -> %q`, filePath, newPath)
+		l.Printf(`dryRun deleteRegexp: %q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -925,7 +925,7 @@ func deleteParts(fi os.FileInfo, partsToDelete []int, fromBack, forceOverwrite, 
 	newPath := strings.Join(newParts, "-") + ext
 
 	if dryRun {
-		l.Printf(`%q -> %q`, filePath, newPath)
+		l.Printf(`dryRun deleteParts: %q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -999,7 +999,7 @@ func addNumber(fi os.FileInfo, regularExpression string, numberToAdd int64, rege
 	newPath := basePath + ext
 
 	if dryRun {
-		l.Printf(`%q -> %q`, filePath, newPath)
+		l.Printf(`dryRun addNumber: %q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -1023,6 +1023,8 @@ func (a App) addNumber(c *cli.Context, args []string, fi os.FileInfo, dryRun boo
 }
 
 func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDuplicate, skipDashPrefix, forceOverwrite, dryRun bool) error {
+	l.Printf(`insertBefore args. file: "%s", regexp: "%s", insert text: "%s", skip duplicate: %v, skip dash prefix: %v, force overwrite: %v`, fi.Name(), regularExpression, insertText, skipDuplicate, skipDashPrefix, forceOverwrite)
+
 	filePath := fi.Name()
 
 	if regularExpression == "" {
@@ -1058,9 +1060,9 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDupl
 		newPath = strings.Replace(basePath, matched[len(matched)-1][1], insertText, 1) + ext
 	}
 
-	l.Printf(`%q -> %q, found: %q, new: %q`, filePath, newPath, matched, insertText)
-
 	if dryRun {
+		l.Printf(`dryRun insertBefore: %q -> %q, found: %q, new: %q`, filePath, newPath, matched, insertText)
+
 		return nil
 	}
 
@@ -1161,7 +1163,7 @@ func prefixDate(fi os.FileInfo, forceOverwrite, dryRun bool) error {
 	newPath := parsedDate.Format(dateFormat3) + "-" + basePath + ext
 
 	if dryRun {
-		l.Printf(`%q -> %q`, filePath, newPath)
+		l.Printf(`dryRun prefixDate: %q -> %q`, filePath, newPath)
 
 		return nil
 	}
@@ -1815,7 +1817,7 @@ func main() {
 		skipDashPrefixFlag: &cli.BoolFlag{
 			Name:    skipDashPrefixFlag,
 			Aliases: []string{skipDashPrefixAlias},
-			Value:   true,
+			Value:   false,
 			Usage:   skipDashPrefixUsage,
 		},
 		skipDuplicateFlag: &cli.BoolFlag{

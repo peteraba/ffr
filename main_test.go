@@ -21,6 +21,11 @@ func createExampleVideo(t *testing.T, filePath string) {
 	require.NoError(t, err)
 }
 
+func createSDExampleVideo(t *testing.T, filePath string) {
+	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=640x480:rate=30 "%s"`, filePath))
+	require.NoError(t, err)
+}
+
 func createFullHDExampleVideo(t *testing.T, filePath string) {
 	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=1920x1080:rate=30 "%s"`, filePath))
 	require.NoError(t, err)
@@ -935,17 +940,17 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		},
 		{
 			name: "_1080p",
-			need: []string{"baz-foo4bar_1080p-1nba-nice-dunking.mp4"},
+			need: []string{"baz-foo4bar.1080p.mp4"},
 			args: args{
-				filePath:          "baz-foo4bar_1080p-1nba-nice-dunking.mp4",
+				filePath:          "baz-foo4bar.1080p.mp4",
 				regularExpression: "",
-				skipDuplicate:     false,
-				skipDashPrefix:    false,
+				skipDuplicate:     true,
+				skipDashPrefix:    true,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
 			fn:   createFullHDExampleVideo,
-			want: []string{"baz-foo4bar_1080p-fullhd-1080p-1nba-nice-dunking.mp4"},
+			want: []string{"baz-foo4bar.fullhd-1080p-1080p.mp4"},
 		},
 	}
 	for _, tt := range tests {
