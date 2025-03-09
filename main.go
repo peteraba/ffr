@@ -70,6 +70,8 @@ const (
 	ed2Height    = 540
 	sdWidth      = 640
 	sdHeight     = 480
+	sd2Width     = 720
+	sd2Height    = 480
 )
 
 var wellKnown = map[string]string{
@@ -81,6 +83,7 @@ var wellKnown = map[string]string{
 	"1280x720":  "hd-720p",
 	"720x540":   "ed-540p",
 	"960x540":   "ed-540p",
+	"720x480":   "sd-480p",
 	"640x480":   "sd-480p",
 }
 
