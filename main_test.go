@@ -21,6 +21,11 @@ func createExampleVideo(t *testing.T, filePath string) {
 	require.NoError(t, err)
 }
 
+func createFullHDExampleVideo(t *testing.T, filePath string) {
+	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=1920x1080:rate=30 "%s"`, filePath))
+	require.NoError(t, err)
+}
+
 func cleanUp(t *testing.T, want, need []string) {
 	for _, fileName := range want {
 		assert.FileExists(t, fileName)
@@ -797,6 +802,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 
 		// same as before
 		fi2, err := os.Stat(expectedFile)
+		require.NoError(t, err)
 		assert.Greater(t, allWritten.UnixNano(), fi2.ModTime().UnixNano())
 	})
 
@@ -805,7 +811,6 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		regularExpression string
 		skipDuplicate     bool
 		skipDashPrefix    bool
-		insertText        string
 		forceOverwrite    bool
 		dryRun            bool
 	}
@@ -813,6 +818,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		name string
 		need []string
 		args args
+		fn   func(t *testing.T, filePath string)
 		want []string
 	}{
 		{
@@ -826,6 +832,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foo-320x240.mp4"},
 		},
 		{
@@ -839,6 +846,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foo-320x240-320x240.mp4"},
 		},
 		{
@@ -852,6 +860,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foo-320x240.mp4"},
 		},
 		{
@@ -865,6 +874,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foo-320x240-1bar.mp4"},
 		},
 		{
@@ -878,6 +888,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foo-320x240-BAR.mp4"},
 		},
 		{
@@ -891,6 +902,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foo4bar-320x240.mp4"},
 		},
 		{
@@ -904,7 +916,36 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
+			fn:   createExampleVideo,
 			want: []string{"foobar-barbaz-Foo bar baz 4 quix-0cut-1ffc-bar-baz-320x240-2foo-baz.mp4"},
+		},
+		{
+			name: "_320x240",
+			need: []string{"foo4bar_320x240.mp4"},
+			args: args{
+				filePath:          "foo4bar_320x240.mp4",
+				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			fn:   createExampleVideo,
+			want: []string{"foo4bar_320x240-320x240.mp4"},
+		},
+		{
+			name: "_1080p",
+			need: []string{"baz-foo4bar_1080p-1nba-nice-dunking.mp4"},
+			args: args{
+				filePath:          "baz-foo4bar_1080p-1nba-nice-dunking.mp4",
+				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			fn:   createFullHDExampleVideo,
+			want: []string{"baz-foo4bar_1080p-fullhd-1080p-1nba-nice-dunking.mp4"},
 		},
 	}
 	for _, tt := range tests {
@@ -916,7 +957,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			// setup
 			for _, filePath := range tt.need {
 				require.NoFileExists(t, filePath)
-				createExampleVideo(t, filePath)
+				tt.fn(t, filePath)
 			}
 
 			// execute
@@ -985,10 +1026,7 @@ func Test_getFileInfoList(t *testing.T) {
 
 func Test_keyFrames(t *testing.T) {
 	type args struct {
-		filePath          string
-		regularExpression string
-		insertText        string
-		forceOverwrite    bool
+		filePath string
 	}
 	tests := []struct {
 		name       string
@@ -1376,7 +1414,6 @@ func Test_replace(t *testing.T) {
 		skip           int
 		forceOverwrite bool
 		dryRun         bool
-		verbose        bool
 	}
 	tests := []struct {
 		name string
@@ -1629,7 +1666,6 @@ func Test_crop(t *testing.T) {
 	type args struct {
 		filePath          string
 		regularExpression string
-		insertText        string
 		forceOverwrite    bool
 		dryRun            bool
 		width, height     int

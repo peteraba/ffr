@@ -17,6 +17,8 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+const VERSION = "0.1.0"
+
 const (
 	separator = "-"
 )
@@ -64,6 +66,8 @@ const (
 	hdHeight     = 720
 	edWidth      = 960
 	edHeight     = 540
+	ed2Width     = 720
+	ed2Height    = 540
 	sdWidth      = 640
 	sdHeight     = 480
 )
@@ -75,6 +79,7 @@ var wellKnown = map[string]string{
 	"2560x1440": "qhd-1440p",
 	"1920x1080": "fullhd-1080p",
 	"1280x720":  "hd-720p",
+	"720x540":   "ed-540p",
 	"960x540":   "ed-540p",
 	"640x480":   "sd-480p",
 }
@@ -1534,6 +1539,10 @@ func (a App) infoAll(c *cli.Context, args []string, fileList []os.FileInfo, dryR
 
 // commands
 const (
+	versionCommand = "version"
+	versionAliases = "v"
+	versionUsage   = "display the version of ffr"
+
 	addNumberCommand = "add-number"
 	addNumberAliases = "a"
 	addNumberUsage   = `add a number to the last number found in the file
@@ -1895,6 +1904,16 @@ func main() {
 			globalFlags[verboseFlag],
 		},
 		Commands: []*cli.Command{
+			{
+				Name:    versionCommand,
+				Aliases: strings.Split(versionAliases, ", "),
+				Usage:   versionUsage,
+				Action: func(c *cli.Context) error {
+					fmt.Println(VERSION)
+
+					return nil
+				},
+			},
 			{
 				Name:      addNumberCommand,
 				Aliases:   strings.Split(addNumberAliases, ", "),
