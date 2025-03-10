@@ -759,7 +759,7 @@ func Test_insertBefore(t *testing.T) {
 			// execute
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
-			result := insertBefore(fi, tt.args.regularExpression, tt.args.insertText, tt.args.skipDuplicate, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
+			result := insertBefore(fi, tt.args.regularExpression, tt.args.insertText, tt.args.skipDuplicate, tt.args.skipDashPrefix, false, tt.args.forceOverwrite, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
@@ -797,7 +797,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		// execute
 		fi, err := os.Stat(vidPath)
 		require.NoError(t, err)
-		result := insertDimensionsBefore(fi, "", false, true, forceOverwrite, dryRun)
+		result := insertDimensionsBefore(fi, "", false, true, false, forceOverwrite, dryRun)
 
 		// assert
 		assert.NoError(t, result)
@@ -816,6 +816,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 		regularExpression string
 		skipDuplicate     bool
 		skipDashPrefix    bool
+		fixName           bool
 		forceOverwrite    bool
 		dryRun            bool
 	}
@@ -834,6 +835,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -848,6 +850,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -862,6 +865,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     true,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -876,6 +880,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -890,6 +895,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "BAR",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -904,6 +910,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -918,6 +925,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -932,6 +940,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
@@ -946,11 +955,42 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				regularExpression: "",
 				skipDuplicate:     true,
 				skipDashPrefix:    true,
+				fixName:           false,
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
 			fn:   createFullHDExampleVideo,
 			want: []string{"baz-foo4bar.fullhd-1080p-1080p.mp4"},
+		},
+		{
+			name: "fix filename capital",
+			need: []string{"foo4bar__foo-bar_1080P-somebs.mp4"},
+			args: args{
+				filePath:          "foo4bar__foo-bar_1080P-somebs.mp4",
+				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				fixName:           true,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			fn:   createFullHDExampleVideo,
+			want: []string{"foo4bar__foo-bar-somebs-fullhd-1080p.mp4"},
+		},
+		{
+			name: "fix filename multiple",
+			need: []string{"foo5bar__foo-bar_1080p_h264-somebs.mp4"},
+			args: args{
+				filePath:          "foo5bar__foo-bar_1080p_h264-somebs.mp4",
+				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				fixName:           true,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			fn:   createFullHDExampleVideo,
+			want: []string{"foo5bar__foo-bar-somebs-fullhd-1080p.mp4"},
 		},
 	}
 	for _, tt := range tests {
@@ -968,7 +1008,7 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			// execute
 			fi, err := os.Stat(tt.args.filePath)
 			require.NoError(t, err)
-			result := insertDimensionsBefore(fi, tt.args.regularExpression, tt.args.skipDuplicate, tt.args.skipDashPrefix, tt.args.forceOverwrite, tt.args.dryRun)
+			result := insertDimensionsBefore(fi, tt.args.regularExpression, tt.args.skipDuplicate, tt.args.skipDashPrefix, tt.args.fixName, tt.args.forceOverwrite, tt.args.dryRun)
 
 			// assert
 			assert.NoError(t, result)
@@ -1669,13 +1709,12 @@ func Test_suffix(t *testing.T) {
 
 func Test_crop(t *testing.T) {
 	type args struct {
-		filePath          string
-		regularExpression string
-		forceOverwrite    bool
-		dryRun            bool
-		width, height     int
-		x, y              string
-		dimensionPreset   string
+		filePath        string
+		forceOverwrite  bool
+		dryRun          bool
+		width, height   int
+		x, y            string
+		dimensionPreset string
 	}
 	tests := []struct {
 		name       string
@@ -1739,6 +1778,69 @@ func Test_crop(t *testing.T) {
 				assert.FileExists(t, fileName)
 			}
 			assert.Contains(t, l.history, tt.wantOutput)
+		})
+	}
+}
+
+func Test_fix(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          string
+		out         string
+		expectedErr error
+	}{
+		{
+			name: "fix start",
+			in:   "1080P_blabla-1ffc",
+			out:  "blabla-1ffc",
+		},
+		{
+			name: "fix end",
+			in:   "blabla-1ffc-1080P",
+			out:  "blabla-1ffc",
+		},
+		{
+			name: "fix filename simple",
+			in:   "foo4bar__foo-bar___1080P-somebs",
+			out:  "foo4bar__foo-bar-somebs",
+		},
+		{
+			name: "fix filename multiple",
+			in:   "foo4bar__foo-bar_1080p_h264-somebs",
+			out:  "foo4bar__foo-bar-somebs",
+		},
+		{
+			name: "fix filename multiple underscore kept",
+			in:   "foo4bar__foo-bar_1080p_h264_banana-somebs",
+			out:  "foo4bar__foo-bar_banana-somebs",
+		},
+		{
+			name: "fix filename multiple dot kept",
+			in:   "foo4bar__foo-bar.1080p.h264.why-somebs",
+			out:  "foo4bar__foo-bar.why-somebs",
+		},
+		{
+			name: "fix filename multiple dot kept (one)",
+			in:   "foo4bar__foo-bar...1080p..h264..why-somebs",
+			out:  "foo4bar__foo-bar.why-somebs",
+		},
+		{
+			name: "fix filename multiple dot not kept (dash)",
+			in:   "foo4bar__foo-bar-...1080p..h264..-why-somebs",
+			out:  "foo4bar__foo-bar-why-somebs",
+		},
+		{
+			name: "fix filename multiple complex",
+			in:   "foo4bar__foo-bar-.___---..1080p.___---..__--.h264..---___---...-why-somebs",
+			out:  "foo4bar__foo-bar-why-somebs",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := fix(tt.in)
+
+			assert.Equal(t, tt.expectedErr, err)
+			assert.Equal(t, tt.out, actual)
 		})
 	}
 }

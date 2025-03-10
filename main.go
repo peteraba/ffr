@@ -17,7 +17,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const VERSION = "0.1.1"
+const VERSION = "0.2.0"
 
 const (
 	separator = "-"
@@ -81,6 +81,7 @@ var wellKnown = map[string]string{
 	"2560x1440": "qhd-1440p",
 	"1920x1080": "fullhd-1080p",
 	"1280x720":  "hd-720p",
+	"1276x720":  "hd-720p",
 	"720x540":   "ed-540p",
 	"960x540":   "ed-540p",
 	"720x480":   "sd-480p",
@@ -94,6 +95,10 @@ const (
 
 var (
 	allowedPresets = []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
+)
+
+var (
+	wrongPhrases = []string{"(108|72|54|48)0(p|P)?", "\\d\\d00K", "h264"}
 )
 
 type logger struct {
@@ -524,7 +529,6 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 				Delete(hwaccelDeviceKey)
 		}
 
-		break
 	case encoderH264:
 		const x264Params = "-x264-params"
 
@@ -559,7 +563,6 @@ func reEncode(fi os.FileInfo, codec string, crf int, preset, hwaccel, hwaccelDev
 				Delete(hwaccelDeviceKey)
 		}
 
-		break
 	case encoderVP9:
 		const vp9KeyFrameKey = "-g"
 
@@ -1025,8 +1028,10 @@ func (a App) addNumber(c *cli.Context, args []string, fi os.FileInfo, dryRun boo
 	return addNumber(fi, regularExpression, numberToAdd, regexpGroup, skipFinds, maxCount, forceOverwrite, dryRun)
 }
 
-func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDuplicate, skipDashPrefix, forceOverwrite, dryRun bool) error {
+func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDuplicate, skipDashPrefix, fixName, forceOverwrite, dryRun bool) error {
 	l.Printf(`insertBefore args. file: "%s", regexp: "%s", insert text: "%s", skip duplicate: %v, skip dash prefix: %v, force overwrite: %v`, fi.Name(), regularExpression, insertText, skipDuplicate, skipDashPrefix, forceOverwrite)
+
+	var err error
 
 	filePath := fi.Name()
 
@@ -1044,6 +1049,13 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDupl
 	ext := filepath.Ext(filePath)
 	if ext != "" {
 		basePath = basePath[:len(basePath)-len(ext)]
+	}
+
+	if fixName {
+		basePath, err = fix(basePath)
+		if err != nil {
+			return fmt.Errorf("fixName regexp failed, err: %w", err)
+		}
 	}
 
 	regularExpression = "(" + regularExpression + ")"
@@ -1072,6 +1084,55 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDupl
 	return safeRename(filePath, newPath, forceOverwrite)
 }
 
+func inSlice(test byte, slice ...byte) bool {
+	for _, ch := range slice {
+		if ch == test {
+			return true
+		}
+	}
+
+	return false
+}
+
+func fix(in string) (string, error) {
+	out := in
+
+	for _, wrongPhrase := range wrongPhrases {
+		regExp := "(_|\\.|-)*" + wrongPhrase + "(_|\\.|-)*"
+
+		r, err := regexp.Compile(regExp)
+		if err != nil {
+			return "", err
+		}
+
+		for _, match := range r.FindAllStringIndex(out, -1) {
+			matchString := out[match[0]:match[1]]
+
+			keep := "-"
+			if matchString[0] == '-' || matchString[len(matchString)-1] == '-' {
+				keep = "-"
+			} else if inSlice(matchString[0], '_', '.') {
+				keep = matchString[0:1]
+			} else if inSlice(matchString[len(matchString)-1], '_', '.') {
+				keep = matchString[len(matchString)-1:]
+			}
+
+			keepNeeded := false
+			if match[0] > 0 && match[1] < len(out) && !inSlice(out[match[0]-1], '.', '_', '-') && !inSlice(out[match[1]+1], '.', '_', '-') {
+				keepNeeded = true
+			}
+
+			if !keepNeeded {
+				keep = ""
+			}
+
+			out = strings.Replace(out, matchString, keep, 1)
+		}
+	}
+
+	return out, nil
+}
+
 func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
 	regularExpression := c.String(regexpFlag)
 	skipDashPrefix := c.Bool(skipDashPrefixFlag)
@@ -1080,7 +1141,7 @@ func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun 
 
 	forceOverwrite := c.Bool(forceFlag)
 
-	return insertBefore(fi, regularExpression, insert, skipDuplicate, skipDashPrefix, forceOverwrite, dryRun)
+	return insertBefore(fi, regularExpression, insert, skipDuplicate, skipDashPrefix, false, forceOverwrite, dryRun)
 }
 
 var dimensionsRegexp = regexp.MustCompile(`\d+x\d+$`)
@@ -1110,7 +1171,7 @@ func getDimensions(fi os.FileInfo) (string, error) {
 	return dimensions, nil
 }
 
-func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun bool) error {
+func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDuplicatePrefix, skipDashPrefix, fixName, forceOverwrite, dryRun bool) error {
 	dimensions, err := getDimensions(fi)
 	if err != nil {
 		return err
@@ -1120,7 +1181,7 @@ func insertDimensionsBefore(fi os.FileInfo, regularExpression string, skipDuplic
 		dimensions = found
 	}
 
-	return insertBefore(fi, regularExpression, dimensions, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun)
+	return insertBefore(fi, regularExpression, dimensions, skipDuplicatePrefix, skipDashPrefix, fixName, forceOverwrite, dryRun)
 }
 
 var dateRegexp1 = regexp.MustCompile(`20\d{6}`)
@@ -1184,9 +1245,10 @@ func (a App) insertDimensionsBefore(c *cli.Context, args []string, fi os.FileInf
 	regularExpression := c.String(regexpFlag)
 	skipDashPrefix := c.Bool(skipDashPrefixFlag)
 	skipDuplicatePrefix := c.Bool(skipDuplicateFlag)
+	fixName := c.Bool(fixNameFlag)
 	forceOverwrite := c.Bool(forceFlag)
 
-	return insertDimensionsBefore(fi, regularExpression, skipDuplicatePrefix, skipDashPrefix, forceOverwrite, dryRun)
+	return insertDimensionsBefore(fi, regularExpression, skipDuplicatePrefix, skipDashPrefix, fixName, forceOverwrite, dryRun)
 }
 
 func parseDimensions(dimensions string) (int, int, error) {
@@ -1744,6 +1806,10 @@ const (
 	replaceFileFlag  = "replace-file"
 	replaceFileAlias = "rf"
 	replaceFileUsage = "if true, the original file is backed up and replaced"
+
+	fixNameFlag  = "fix-name"
+	fixNameAlias = "fn"
+	fixNameUsage = "if provided, the name will be cleaned of references to codec, quality and definition"
 )
 
 func main() {
@@ -1898,6 +1964,12 @@ func main() {
 			Value:   false,
 			Usage:   replaceFileUsage,
 		},
+		fixNameFlag: &cli.BoolFlag{
+			Name:    fixNameFlag,
+			Aliases: []string{fixNameAlias},
+			Value:   false,
+			Usage:   fixNameUsage,
+		},
 	}
 
 	app := &cli.App{
@@ -1985,6 +2057,7 @@ func main() {
 					commandFlags[regexpFlag],
 					commandFlags[skipDashPrefixFlag],
 					commandFlags[skipDuplicateFlag],
+					commandFlags[fixNameFlag],
 				},
 				Action: func(c *cli.Context) error {
 					return process(c, 0, a.insertDimensionsBefore)
