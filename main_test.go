@@ -953,6 +953,21 @@ func Test_insertDimensionsBefore(t *testing.T) {
 			want: []string{"foo4bar_320x240-320x240.mp4"},
 		},
 		{
+			name: "_sd",
+			need: []string{"foo4bar_sd.mp4"},
+			args: args{
+				filePath:          "foo4bar_sd.mp4",
+				regularExpression: "",
+				skipDuplicate:     false,
+				skipDashPrefix:    false,
+				fixName:           false,
+				forceOverwrite:    false,
+				dryRun:            false,
+			},
+			fn:   createSDExampleVideo,
+			want: []string{"foo4bar_sd-sd-480p.mp4"},
+		},
+		{
 			name: "_1080p",
 			need: []string{"baz-foo4bar.1080p.mp4"},
 			args: args{
@@ -1852,6 +1867,11 @@ func Test_fix(t *testing.T) {
 			name: "crazy real 2",
 			in:   "foo-35_FOO_1025_2160P-4k-2160p-3pro-great-dunk-phone2",
 			out:  "foo-35_FOO_1025-3pro-great-dunk-phone2",
+		},
+		{
+			name: "foo4bar__foo",
+			in:   "foo4bar__foo-bar_1080P-somebs",
+			out:  "foo4bar_foo-bar-somebs",
 		},
 	}
 	for _, tt := range tests {
