@@ -17,7 +17,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const VERSION = "0.2.0"
+const VERSION = "0.2.1"
 
 const (
 	separator = "-"
@@ -95,10 +95,6 @@ const (
 
 var (
 	allowedPresets = []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
-)
-
-var (
-	wrongPhrases = []string{"(108|72|54|48)0(p|P)?", "\\d\\d00K", "h264"}
 )
 
 type logger struct {
@@ -1094,13 +1090,15 @@ func inSlice(test byte, slice ...byte) bool {
 	return false
 }
 
+var (
+	wrongPhrases = []string{"(432|216|108|72|54|48)0(p|P)?", "\\d\\d00K", "h264"}
+)
+
 func fix(in string) (string, error) {
 	out := in
 
 	for _, wrongPhrase := range wrongPhrases {
-		regExp := "(_|\\.|-)*" + wrongPhrase + "(_|\\.|-)*"
-
-		r, err := regexp.Compile(regExp)
+		r, err := regexp.Compile(wrongPhrase)
 		if err != nil {
 			return "", err
 		}
@@ -1108,27 +1106,30 @@ func fix(in string) (string, error) {
 		for _, match := range r.FindAllStringIndex(out, -1) {
 			matchString := out[match[0]:match[1]]
 
-			keep := "-"
-			if matchString[0] == '-' || matchString[len(matchString)-1] == '-' {
-				keep = "-"
-			} else if inSlice(matchString[0], '_', '.') {
-				keep = matchString[0:1]
-			} else if inSlice(matchString[len(matchString)-1], '_', '.') {
-				keep = matchString[len(matchString)-1:]
-			}
-
-			keepNeeded := false
-			if match[0] > 0 && match[1] < len(out) && !inSlice(out[match[0]-1], '.', '_', '-') && !inSlice(out[match[1]+1], '.', '_', '-') {
-				keepNeeded = true
-			}
-
-			if !keepNeeded {
-				keep = ""
-			}
-
-			out = strings.Replace(out, matchString, keep, 1)
+			out = strings.Replace(out, matchString, "", 1)
 		}
 	}
+
+	out = strings.Trim(out, " _.-")
+	for {
+		out2 := strings.ReplaceAll(out, "__", "_")
+		out2 = strings.ReplaceAll(out2, "..", ".")
+		out2 = strings.ReplaceAll(out2, "._", ".")
+		out2 = strings.ReplaceAll(out2, "_.", "_")
+		if len(out) == len(out2) {
+			break
+		}
+		out = out2
+	}
+
+	parts := []string{}
+	for _, part := range strings.Split(out, "-") {
+		part = strings.Trim(part, " _.")
+		if len(part) > 0 {
+			parts = append(parts, part)
+		}
+	}
+	out = strings.Join(parts, "-")
 
 	return out, nil
 }

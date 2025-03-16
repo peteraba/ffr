@@ -31,6 +31,11 @@ func createFullHDExampleVideo(t *testing.T, filePath string) {
 	require.NoError(t, err)
 }
 
+func create4KExampleVideo(t *testing.T, filePath string) {
+	_, err := exec(fmt.Sprintf(`ffmpeg -f lavfi -i testsrc=duration=10:size=3840x2160:rate=30 "%s"`, filePath))
+	require.NoError(t, err)
+}
+
 func cleanUp(t *testing.T, want, need []string) {
 	for _, fileName := range want {
 		assert.FileExists(t, fileName)
@@ -975,13 +980,13 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				dryRun:            false,
 			},
 			fn:   createFullHDExampleVideo,
-			want: []string{"foo4bar__foo-bar-somebs-fullhd-1080p.mp4"},
+			want: []string{"foo4bar_foo-bar-somebs-fullhd-1080p.mp4"},
 		},
 		{
 			name: "fix filename multiple",
-			need: []string{"foo5bar__foo-bar_1080p_h264-somebs.mp4"},
+			need: []string{"foo5bar__foo-bar_2160p_h264-somebs.mp4"},
 			args: args{
-				filePath:          "foo5bar__foo-bar_1080p_h264-somebs.mp4",
+				filePath:          "foo5bar__foo-bar_2160p_h264-somebs.mp4",
 				regularExpression: "",
 				skipDuplicate:     false,
 				skipDashPrefix:    false,
@@ -989,8 +994,8 @@ func Test_insertDimensionsBefore(t *testing.T) {
 				forceOverwrite:    false,
 				dryRun:            false,
 			},
-			fn:   createFullHDExampleVideo,
-			want: []string{"foo5bar__foo-bar-somebs-fullhd-1080p.mp4"},
+			fn:   create4KExampleVideo,
+			want: []string{"foo5bar_foo-bar-somebs-4k-2160p.mp4"},
 		},
 	}
 	for _, tt := range tests {
@@ -1624,7 +1629,6 @@ func Test_suffix(t *testing.T) {
 		skip           int
 		forceOverwrite bool
 		dryRun         bool
-		verbose        bool
 	}
 	tests := []struct {
 		name string
@@ -1801,38 +1805,43 @@ func Test_fix(t *testing.T) {
 		},
 		{
 			name: "fix filename simple",
-			in:   "foo4bar__foo-bar___1080P-somebs",
-			out:  "foo4bar__foo-bar-somebs",
+			in:   "foo4bar_foo-bar___1080P-somebs",
+			out:  "foo4bar_foo-bar-somebs",
 		},
 		{
 			name: "fix filename multiple",
-			in:   "foo4bar__foo-bar_1080p_h264-somebs",
-			out:  "foo4bar__foo-bar-somebs",
+			in:   "foo4bar_foo-bar_1080p_h264-somebs",
+			out:  "foo4bar_foo-bar-somebs",
 		},
 		{
 			name: "fix filename multiple underscore kept",
-			in:   "foo4bar__foo-bar_1080p_h264_banana-somebs",
-			out:  "foo4bar__foo-bar_banana-somebs",
+			in:   "foo4bar_foo-bar_1080p_h264_banana-somebs",
+			out:  "foo4bar_foo-bar_banana-somebs",
 		},
 		{
 			name: "fix filename multiple dot kept",
-			in:   "foo4bar__foo-bar.1080p.h264.why-somebs",
-			out:  "foo4bar__foo-bar.why-somebs",
+			in:   "foo4bar_foo-bar.1080p.h264.why-somebs",
+			out:  "foo4bar_foo-bar.why-somebs",
 		},
 		{
 			name: "fix filename multiple dot kept (one)",
-			in:   "foo4bar__foo-bar...1080p..h264..why-somebs",
-			out:  "foo4bar__foo-bar.why-somebs",
+			in:   "foo4bar_foo-bar...1080p..h264..why-somebs",
+			out:  "foo4bar_foo-bar.why-somebs",
 		},
 		{
 			name: "fix filename multiple dot not kept (dash)",
-			in:   "foo4bar__foo-bar-...1080p..h264..-why-somebs",
-			out:  "foo4bar__foo-bar-why-somebs",
+			in:   "foo4bar_foo-bar-...1080p..h264..-why-somebs",
+			out:  "foo4bar_foo-bar-why-somebs",
 		},
 		{
 			name: "fix filename multiple complex",
-			in:   "foo4bar__foo-bar-.___---..1080p.___---..__--.h264..---___---...-why-somebs",
-			out:  "foo4bar__foo-bar-why-somebs",
+			in:   "foo4bar_foo-bar-.___---..1080p.___---..__--.h264..---___---...-why-somebs",
+			out:  "foo4bar_foo-bar-why-somebs",
+		},
+		{
+			name: "crazy",
+			in:   "foo4bar__...___foo-bar-.___-....--..1080p.___---..__--.h264..---___---...-why-somebs",
+			out:  "foo4bar_foo-bar-why-somebs",
 		},
 	}
 	for _, tt := range tests {
