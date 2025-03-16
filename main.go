@@ -18,7 +18,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const VERSION = "0.2.2"
+const VERSION = "0.2.3"
 
 const (
 	separator = "-"
@@ -1036,7 +1036,7 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDupl
 		regularExpression = "\\d+[a-z]+"
 	}
 
-	if skipDuplicate && strings.Contains(filePath, insertText) {
+	if !forceOverwrite && skipDuplicate && strings.Contains(filePath, insertText) {
 		l.Printf(`skipping as duplicate is found. needle: %q, haystack: %q`, insertText, filePath)
 
 		return nil
@@ -1048,11 +1048,11 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDupl
 		basePath = basePath[:len(basePath)-len(ext)]
 	}
 
+	l.Printf(`fix name: %v\n`, fixName)
 	if fixName {
-		basePath, err = fix(basePath)
-		if err != nil {
-			return fmt.Errorf("fixName regexp failed, err: %w", err)
-		}
+		l.Printf(`old base path: %s\n`, basePath)
+		basePath = fix(basePath)
+		l.Printf(`new base path: %s\n`, basePath)
 	}
 
 	regularExpression = "(" + regularExpression + ")"
@@ -1092,7 +1092,7 @@ const (
 	Z = 'Z'
 )
 
-func fix(in string) (string, error) {
+func fix(in string) string {
 	parts := []string{}
 	separators := []rune{'_', '-', '.'}
 
@@ -1106,8 +1106,8 @@ func fix(in string) (string, error) {
 
 		part := strings.TrimSpace(in[startPart:i])
 		startPart = i + 1
-		if part == "" || slices.Contains(wrong, strings.ToLower(part)) {
-			if r == '-' && lastSeparator != '-' {
+		if part == "" || slices.Contains(wrong, strings.ToLower(part)) || dimensionsRegexp.MatchString(part) {
+			if len(parts) > 0 && r == '-' && lastSeparator != '-' {
 				parts[len(parts)-1] = string(r)
 			}
 
@@ -1119,13 +1119,13 @@ func fix(in string) (string, error) {
 	}
 
 	part := in[startPart:]
-	if part != "" && !slices.Contains(wrong, strings.ToLower(part)) {
+	if part != "" && !slices.Contains(wrong, strings.ToLower(part)) && !dimensionsRegexp.MatchString(part) {
 		parts = append(parts, part)
 	}
 
 	out := strings.TrimRight(strings.Join(parts, ""), " -_.")
 
-	return out, nil
+	return out
 }
 
 func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun bool) error {
@@ -1139,7 +1139,7 @@ func (a App) insertBefore(c *cli.Context, args []string, fi os.FileInfo, dryRun 
 	return insertBefore(fi, regularExpression, insert, skipDuplicate, skipDashPrefix, false, forceOverwrite, dryRun)
 }
 
-var dimensionsRegexp = regexp.MustCompile(`\d+x\d+$`)
+var dimensionsRegexp = regexp.MustCompile(`\d{2,4}x\d{2,4}$`)
 
 func getDimensions(fi os.FileInfo) (string, error) {
 	fp := strings.Replace(fi.Name(), " ", "\\ ", -1)

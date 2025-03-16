@@ -1854,6 +1854,21 @@ func Test_fix(t *testing.T) {
 			out:  "foo4bar_foo-bar-why-somebs",
 		},
 		{
+			name: "dimensions at the beginning",
+			in:   "320x567-foo4bar_foo-bar-.___---..-.___---..__--.h264..---___---...-why-somebs",
+			out:  "foo4bar_foo-bar-why-somebs",
+		},
+		{
+			name: "dimensions in the middle",
+			in:   "foo4bar_foo-bar-.___---..-320x567-.___---..__--.h264..---___---...-why-somebs",
+			out:  "foo4bar_foo-bar-why-somebs",
+		},
+		{
+			name: "dimensions at the end",
+			in:   "foo4bar_foo-bar-.___---..-.___---..__--.h264..---___---...-why-somebs-320x567",
+			out:  "foo4bar_foo-bar-why-somebs",
+		},
+		{
 			name: "crazy",
 			in:   "foo4bar__...___foo-bar-.___-....--..1080p.___---..__--.h264..---___---...-why-somebs",
 			out:  "foo4bar_foo-bar-why-somebs",
@@ -1876,9 +1891,8 @@ func Test_fix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual, err := fix(tt.in)
+			actual := fix(tt.in)
 
-			assert.Equal(t, tt.expectedErr, err)
 			assert.Equal(t, tt.out, actual)
 		})
 	}
