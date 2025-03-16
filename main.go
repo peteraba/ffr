@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,7 +18,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const VERSION = "0.2.1"
+const VERSION = "0.2.2"
 
 const (
 	separator = "-"
@@ -1080,56 +1081,49 @@ func insertBefore(fi os.FileInfo, regularExpression, insertText string, skipDupl
 	return safeRename(filePath, newPath, forceOverwrite)
 }
 
-func inSlice(test byte, slice ...byte) bool {
-	for _, ch := range slice {
-		if ch == test {
-			return true
-		}
-	}
-
-	return false
-}
-
 var (
-	wrongPhrases = []string{"(432|216|108|72|54|48)0(p|P)?", "\\d\\d00K", "h264"}
+	wrong = []string{"2160p", "1080p", "720p", "540p", "480p", "4k", "fullhd", "hd", "h264", "1500k", "4000k", "6000k", "8000k"}
+)
+
+const (
+	a = 'a'
+	z = 'z'
+	A = 'A'
+	Z = 'Z'
 )
 
 func fix(in string) (string, error) {
-	out := in
-
-	for _, wrongPhrase := range wrongPhrases {
-		r, err := regexp.Compile(wrongPhrase)
-		if err != nil {
-			return "", err
-		}
-
-		for _, match := range r.FindAllStringIndex(out, -1) {
-			matchString := out[match[0]:match[1]]
-
-			out = strings.Replace(out, matchString, "", 1)
-		}
-	}
-
-	out = strings.Trim(out, " _.-")
-	for {
-		out2 := strings.ReplaceAll(out, "__", "_")
-		out2 = strings.ReplaceAll(out2, "..", ".")
-		out2 = strings.ReplaceAll(out2, "._", ".")
-		out2 = strings.ReplaceAll(out2, "_.", "_")
-		if len(out) == len(out2) {
-			break
-		}
-		out = out2
-	}
-
 	parts := []string{}
-	for _, part := range strings.Split(out, "-") {
-		part = strings.Trim(part, " _.")
-		if len(part) > 0 {
-			parts = append(parts, part)
+	separators := []rune{'_', '-', '.'}
+
+	startPart := 0
+	lastSeparator := rune(' ')
+	runes := []rune(in)
+	for i, r := range runes {
+		if !slices.Contains(separators, r) {
+			continue
 		}
+
+		part := strings.TrimSpace(in[startPart:i])
+		startPart = i + 1
+		if part == "" || slices.Contains(wrong, strings.ToLower(part)) {
+			if r == '-' && lastSeparator != '-' {
+				parts[len(parts)-1] = string(r)
+			}
+
+			continue
+		}
+
+		parts = append(parts, part, string(r))
+		lastSeparator = r
 	}
-	out = strings.Join(parts, "-")
+
+	part := in[startPart:]
+	if part != "" && !slices.Contains(wrong, strings.ToLower(part)) {
+		parts = append(parts, part)
+	}
+
+	out := strings.TrimRight(strings.Join(parts, ""), " -_.")
 
 	return out, nil
 }

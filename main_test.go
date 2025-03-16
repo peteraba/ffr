@@ -1843,6 +1843,16 @@ func Test_fix(t *testing.T) {
 			in:   "foo4bar__...___foo-bar-.___-....--..1080p.___---..__--.h264..---___---...-why-somebs",
 			out:  "foo4bar_foo-bar-why-somebs",
 		},
+		{
+			name: "crazy real 1",
+			in:   "foobar-Jordan Dunking from the 3 Pointer Line - _2160p-4k-2160p-1pro-nba-90s-dunking-brut",
+			out:  "foobar-Jordan Dunking from the 3 Pointer Line-1pro-nba-90s-dunking-brut",
+		},
+		{
+			name: "crazy real 2",
+			in:   "foo-35_FOO_1025_2160P-4k-2160p-3pro-great-dunk-phone2",
+			out:  "foo-35_FOO_1025-3pro-great-dunk-phone2",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
